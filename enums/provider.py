@@ -11,6 +11,8 @@ class ProviderType(str, Enum):
 class PowerUnit(str, Enum):
     WATT = "W"
     KILOWATT = "kW"
-    LUX = "lux"
-    CELSIUS = "C"
-    PERCENT = "%"
+
+
+class ProviderKind(str, Enum):
+    PV_INVERTER = "pv_inverter"
+    

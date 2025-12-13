@@ -11,11 +11,11 @@ from sqlalchemy import engine_from_config, pool
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.config import settings
-from core.db import Base
+from smart_common.core.config import settings
+from smart_common.core.db import Base
 
 # ensure all models are imported so the metadata contains every table
-import models  # noqa: F401
+import smart_common.models  # noqa: F401
 
 config = context.config
 

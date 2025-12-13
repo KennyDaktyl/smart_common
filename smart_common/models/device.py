@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, UUID, Boolean, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smart_common.core.db import Base
 from smart_common.enums.device import DeviceMode
@@ -11,33 +12,39 @@ from smart_common.enums.device import DeviceMode
 class Device(Base):
     __tablename__ = "devices"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    uuid = Column(UUID(as_uuid=True), unique=True, default=uuid.uuid4, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, default=uuid.uuid4, index=True
+    )
 
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    raspberry_id = Column(Integer, ForeignKey("raspberries.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    raspberry_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("raspberries.id", ondelete="CASCADE")
+    )
 
-    device_number = Column(Integer, nullable=False)
-    rated_power_kw = Column(Numeric, nullable=True)
+    device_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    rated_power_kw: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
 
-    mode = Column(
+    mode: Mapped[DeviceMode] = mapped_column(
         Enum(DeviceMode, name="devicemode", create_type=False),
         default=DeviceMode.MANUAL,
         nullable=False,
     )
 
-    threshold_kw = Column(Numeric, nullable=True)
-    hysteresis_w = Column(Numeric, default=100)
+    threshold_kw: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    hysteresis_w: Mapped[float] = mapped_column(Numeric(12, 4), default=100)
 
-    schedule = Column(JSON, nullable=True)
+    schedule: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    last_update = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
-    manual_state = Column(Boolean, nullable=True)
+    last_update: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now(timezone.utc)
+    )
+    manual_state: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
-    raspberry = relationship("Raspberry", back_populates="devices")
-    user = relationship("User", back_populates="devices")
-    schedules = relationship(
+    raspberry: Mapped["Raspberry"] = relationship("Raspberry", back_populates="devices")
+    user: Mapped["User"] = relationship("User", back_populates="devices")
+    schedules: Mapped[list["DeviceSchedule"]] = relationship(
         "DeviceSchedule", back_populates="device", cascade="all, delete-orphan"
     )
 

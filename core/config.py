@@ -10,7 +10,7 @@ class CommonSettings(BaseSettings):
     POSTGRES_USER: str = Field("postgres", env="POSTGRES_USER")
     POSTGRES_PASSWORD: str = Field("pass", env="POSTGRES_PASSWORD")
 
-    NATS_URL: str = Field("nats://localhost:4222", env="NATS_URL")
+    NATS_URL: str = Field("nats://redis:4222", env="NATS_URL")
 
     REDIS_HOST: str = Field("redis", env="REDIS_HOST")
     REDIS_PORT: int = Field(6379, env="REDIS_PORT")

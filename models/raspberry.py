@@ -21,10 +21,13 @@ class Raspberry(Base):
     max_devices = Column(Integer, default=1)
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider_id = Column(Integer, ForeignKey("providers.id", ondelete="SET NULL"), nullable=True, index=True)
 
     user = relationship("User", back_populates="raspberries")
+    provider = relationship("Provider", back_populates="raspberries")
 
     devices = relationship("Device", back_populates="raspberry", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<Raspberry id={self.id} name={self.name} uuid={self.uuid}>"
+    provider_part = f" provider_id={self.provider_id}" if self.provider_id else ""
+    return f"<Raspberry id={self.id} name={self.name} uuid={self.uuid}{provider_part}>"

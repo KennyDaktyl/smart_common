@@ -19,3 +19,8 @@ class PowerUnit(str, Enum):
 class ProviderKind(str, Enum):
     PV_INVERTER = "PV_INVERTER"
     
+
+class ProviderVendor(str, Enum):
+    HUAWEI = "huawei"
+    GOODWE = "goodwe"
+    SIEMENS = "siemens"

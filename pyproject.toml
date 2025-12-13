@@ -1,0 +1,9 @@
+[project]
+name = "smart-common"
+version = "0.1.0"
+description = "Shared domain models, schemas and enums for Smart Energy platform"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

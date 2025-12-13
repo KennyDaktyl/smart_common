@@ -20,6 +20,7 @@ from enums.provider import (
     ProviderType,
     PowerUnit,
     ProviderKind,
+    ProviderVendor,
 )
 
 
@@ -49,7 +50,7 @@ class Provider(Base):
         Enum(ProviderKind, name="provider_kind_enum"),
         nullable=False,
     )
-    vendor = Column(String, nullable=False)
+    vendor = Column(Enum(ProviderVendor), nullable=True)
     model = Column(String, nullable=True)
     unit = Column(
         Enum(PowerUnit, name="power_unit_enum"),
@@ -75,6 +76,7 @@ class Provider(Base):
         "Installation",
         back_populates="providers",
     )
+    raspberries = relationship("Raspberry", back_populates="provider", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return (

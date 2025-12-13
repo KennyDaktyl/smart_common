@@ -16,14 +16,17 @@ logger = logging.getLogger(__name__)
 class NatsModule:
 
     def __init__(self, create_stream: bool = False):
-        self.client = NatsClient()
+        self.client = NATSClient()
         self.publisher = NatsPublisher(self.client)
         self.listener = NatsListener(self.client)
         self.events = EventDispatcher(self.publisher)
         self.create_stream = create_stream
 
     async def _ensure_stream(self):
+        await self.client.ensure_connected()
         js = self.client.js
+        if js is None:
+            raise RuntimeError("JetStream context unavailable when ensuring stream.")
 
         try:
             await js.stream_info("device_communication")

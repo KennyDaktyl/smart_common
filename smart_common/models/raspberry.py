@@ -29,5 +29,5 @@ class Raspberry(Base):
     devices = relationship("Device", back_populates="raspberry", cascade="all, delete-orphan")
 
     def __repr__(self):
-    provider_part = f" provider_id={self.provider_id}" if self.provider_id else ""
-    return f"<Raspberry id={self.id} name={self.name} uuid={self.uuid}{provider_part}>"
+        provider_part = f" provider_id={self.provider_id}" if self.provider_id else ""
+        return f"<Raspberry id={self.id} name={self.name} uuid={self.uuid}{provider_part}>"

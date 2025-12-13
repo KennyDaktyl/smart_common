@@ -8,7 +8,6 @@ ModelT = TypeVar("ModelT")
 
 
 class BaseRepository(Generic[ModelT]):
-    """Generic repository providing basic CRUD operations."""
 
     model: Type[ModelT]
 
@@ -21,7 +20,7 @@ class BaseRepository(Generic[ModelT]):
     def get_by_uuid(self, uuid: str) -> ModelT | None:
         return (
             self.session.query(self.model)
-            .filter_by(uuid=uuid)  # type: ignore[attr-defined]
+            .filter_by(uuid=uuid)
             .one_or_none()
         )
 

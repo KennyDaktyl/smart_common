@@ -19,6 +19,7 @@ class ProviderBase(APIModel):
 
 
 class ProviderCreate(ProviderBase):
+    installation_id: int
     config: Dict[str, Any]
     login: str | None = None
     password: str | None = None

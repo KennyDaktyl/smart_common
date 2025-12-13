@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import joinedload
 
 from smart_common.models.installation import Installation
-from smart_common.models.provider import Provider
+from smart_common.models.providers import Provider
 from smart_common.models.raspberry import Raspberry
 
 from .base import BaseRepository

@@ -3,13 +3,12 @@ from typing import Any, Callable, Dict, Optional, Union
 from pydantic import BaseModel
 
 from smart_common.enums.event import EventType
-from smart_common.nats.publisher import NatsPublisher
 
 
 class EventDispatcher:
     """Helper that enforces a unified event schema for NATS messages."""
 
-    def __init__(self, publisher: NatsPublisher):
+    def __init__(self, publisher: Any):
         self.publisher = publisher
 
     def _build_message(

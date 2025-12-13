@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Generic, Iterable, Type, TypeVar
+from typing import Generic, Iterable, Type, TypeVar, Union
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,7 @@ class BaseRepository(Generic[ModelT]):
     def get_by_id(self, item_id: int) -> ModelT | None:
         return self.session.get(self.model, item_id)
 
-    def get_by_uuid(self, uuid: str) -> ModelT | None:
+    def get_by_uuid(self, uuid: Union[str, UUID]) -> ModelT | None:
         return (
             self.session.query(self.model)
             .filter_by(uuid=uuid)

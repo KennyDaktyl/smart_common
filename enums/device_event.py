@@ -1,0 +1,34 @@
+from enum import Enum
+
+
+class DeviceEventType(str, Enum):
+    STATE = "STATE"  # zmiana stanu ON/OFF
+    MODE = "MODE"  # zmiana trybu MANUAL/AUTO
+    HEARTBEAT = "HEARTBEAT"  # heartbeat ok / failed
+    AUTO_TRIGGER = "AUTO_TRIGGER"
+    SCHEDULER = "SCHEDULER"
+    ERROR = "ERROR"
+
+
+class DeviceEventName(str, Enum):
+    # --- STATE ---
+    DEVICE_ON = "DEVICE_ON"
+    DEVICE_OFF = "DEVICE_OFF"
+
+    # --- MODE ---
+    MANUAL_MODE_ON = "MANUAL_MODE_ON"
+    AUTO_MODE_ON = "AUTO_MODE_ON"
+
+    # --- AUTO ---
+    AUTO_TRIGGER_ON = "AUTO_TRIGGER_ON"
+    AUTO_TRIGGER_OFF = "AUTO_TRIGGER_OFF"
+    AUTO_SKIPPED_NO_SCHEDULE = "AUTO_SKIPPED_NO_SCHEDULE"
+    AUTO_SKIPPED_DISABLED = "AUTO_SKIPPED_DISABLED"
+
+    # --- HEARTBEAT ---
+    HEARTBEAT_OK = "HEARTBEAT_OK"
+    HEARTBEAT_FAILED = "HEARTBEAT_FAILED"
+
+    # --- ERROR ---
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+    DEVICE_ERROR = "DEVICE_ERROR"

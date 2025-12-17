@@ -1,0 +1,76 @@
+# models/microcontroller.py
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import UUID as UUIDType
+from uuid import uuid4
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from core.db import Base
+from enums.microcontroller import MicrocontrollerType
+
+
+class Microcontroller(Base):
+    __tablename__ = "microcontrollers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    uuid: Mapped[UUIDType] = mapped_column(
+        UUID(as_uuid=True),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=uuid4,
+    )
+
+    installation_id: Mapped[int] = mapped_column(
+        ForeignKey("installations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    type: Mapped[MicrocontrollerType] = mapped_column(
+        Enum(MicrocontrollerType, name="microcontroller_type_enum"),
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String)
+
+    software_version: Mapped[str | None] = mapped_column(String)
+
+    max_devices: Mapped[int] = mapped_column(Integer, default=1)
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # --- Relations ---
+    installation = relationship("Installation", back_populates="microcontrollers")
+
+    providers = relationship(
+        "Provider",
+        back_populates="microcontroller",
+        cascade="all, delete-orphan",
+    )
+
+    devices = relationship(
+        "Device",
+        back_populates="microcontroller",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Microcontroller id={self.id} " f"type={self.type} " f"name={self.name}>"

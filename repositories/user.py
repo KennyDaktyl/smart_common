@@ -77,12 +77,15 @@ class UserRepository(BaseRepository[User]):
         data: dict,
     ) -> UserProfile:
         if user.profile is None:
-            user.profile = UserProfile(**data)
+            user.profile = UserProfile(
+                user_id=user.id,
+                **data,
+            )
         else:
             for key, value in data.items():
                 setattr(user.profile, key, value)
 
-        self.session.add(user)
+        self.session.add(user.profile)
         self.session.commit()
         self.session.refresh(user.profile)
         return user.profile

@@ -8,3 +8,4 @@ from smart_common.models.microcontroller import Microcontroller  # noqa: F401
 from smart_common.models.provider import Provider  # noqa: F401
 from smart_common.models.provider_power_record import ProviderPowerRecord  # noqa: F401
 from smart_common.models.user import User  # noqa: F401
+from smart_common.models.user_profile import UserProfile  # noqa: F401

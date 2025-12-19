@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# ======================================================
+# BOOTSTRAP PYTHONPATH (SUBMODULE SAFE)
+# ======================================================
+import sys
+import os
+from pathlib import Path
+
+SMART_COMMON_PATH = os.getenv("SMART_COMMON_PATH")
+
+if SMART_COMMON_PATH:
+    BASE_DIR = Path(SMART_COMMON_PATH).resolve()
+else:
+    # fallback: script is inside smart_common/scripts/
+    BASE_DIR = Path(__file__).resolve().parents[1]
+
+sys.path.insert(0, str(BASE_DIR))
+
+# ======================================================
+# STANDARD IMPORTS
+# ======================================================
 import argparse
 import logging
 from datetime import datetime, timezone
@@ -13,17 +33,28 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 
-ENV_PATH = ".env"
-ALEMBIC_INI_PATH = "alembic.ini"
-VERSIONS_PATH = "alembic/versions"
+# ======================================================
+# PATHS
+# ======================================================
+ENV_PATH = BASE_DIR / ".env"
+ALEMBIC_INI_PATH = BASE_DIR / "alembic.ini"
+ALEMBIC_DIR = BASE_DIR / "alembic"
 
+# ======================================================
+# ENV
+# ======================================================
 load_dotenv(ENV_PATH, encoding="utf-8")
 
-import models  # noqa: F401
-from core.config import settings
-from core.db import Base
+# ======================================================
+# PROJECT IMPORTS (PAKIET!)
+# ======================================================
+import smart_common.models  # noqa: F401
+from smart_common.core.config import settings
+from smart_common.core.db import Base
 
-
+# ======================================================
+# INTERNALS
+# ======================================================
 def _has_schema_changes(engine) -> bool:
     with engine.connect() as connection:
         context = MigrationContext.configure(
@@ -66,6 +97,12 @@ def main() -> int:
     config.set_main_option(
         "sqlalchemy.url",
         settings.DATABASE_URL.replace("%", "%%"),
+    )
+
+    # 🔥 KLUCZOWE DLA SUBMODULE
+    config.set_main_option(
+        "script_location",
+        str(ALEMBIC_DIR),
     )
 
     command.revision(

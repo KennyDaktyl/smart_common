@@ -99,22 +99,20 @@ class BaseRepository(Generic[ModelT]):
 
     def partial_update(
         self,
-        obj: ModelT,
+        obj: Any,
         *,
         data: dict[str, Any],
         allowed_fields: set[str],
-        commit: bool = True,
-    ) -> ModelT:
+    ) -> Any:
         for field, value in data.items():
-            if field in allowed_fields:
-                setattr(obj, field, value)
+            if field not in allowed_fields:
+                continue
+
+            setattr(obj, field, value)
 
         self.session.add(obj)
-
-        if commit:
-            self.session.commit()
-            self.session.refresh(obj)
-
+        self.session.commit()
+        self.session.refresh(obj)
         return obj
     
     def delete(self, obj: ModelT) -> None:

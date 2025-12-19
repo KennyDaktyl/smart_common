@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db import Base
-from enums.device_event import DeviceEventName, DeviceEventType
+from smart_common.core.db import Base
+from smart_common.enums.device_event import DeviceEventName, DeviceEventType
 
 
 class DeviceEvent(Base):

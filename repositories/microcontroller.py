@@ -5,10 +5,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import joinedload
 
-from models.installation import Installation
-from models.microcontroller import Microcontroller
-
-from .base import BaseRepository
+from smart_common.models.installation import Installation
+from smart_common.models.microcontroller import Microcontroller
+from smart_common.repositories.base import BaseRepository
 
 
 class MicrocontrollerRepository(BaseRepository[Microcontroller]):
@@ -40,6 +39,7 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         microcontroller = Microcontroller(**data)
         self.session.add(microcontroller)
         self.session.flush()
+        self.session.commit()
         self.session.refresh(microcontroller)
         return microcontroller
 

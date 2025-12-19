@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import List
 
-from models.device import Device
-from models.installation import Installation
-from models.microcontroller import Microcontroller
+from smart_common.models.device import Device
+from smart_common.models.installation import Installation
+from smart_common.models.microcontroller import Microcontroller
 
-from .base import BaseRepository
+from smart_common.repositories.base import BaseRepository
 
 
 class DeviceRepository(BaseRepository[Device]):

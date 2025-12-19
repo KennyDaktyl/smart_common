@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db import Base
+from smart_common.core.db import Base
 
 
 class Installation(Base):

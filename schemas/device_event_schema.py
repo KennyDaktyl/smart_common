@@ -5,8 +5,8 @@ from typing import List, Optional
 
 from pydantic import Field
 
-from enums.device_event import DeviceEventName, DeviceEventType
-from schemas.base import APIModel, ORMModel
+from smart_common.enums.device_event import DeviceEventName, DeviceEventType
+from smart_common.schemas.base import APIModel, ORMModel
 
 
 class DeviceEventBase(APIModel):

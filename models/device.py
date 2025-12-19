@@ -9,8 +9,8 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, St
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db import Base
-from enums.device import DeviceMode
+from smart_common.core.db import Base
+from smart_common.enums.device import DeviceMode
 
 
 class Device(Base):

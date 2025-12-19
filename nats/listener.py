@@ -3,7 +3,7 @@ import logging
 
 from nats.js.api import DeliverPolicy
 
-from nats.client import nats_client
+from smart_common.nats.client import nats_client
 
 logger = logging.getLogger(__name__)
 

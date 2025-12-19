@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Tuple, Type
 
-from enums.provider import ProviderType
-from schemas.provider_schema import ProviderBase
+from smart_common.enums.provider import ProviderType
+from smart_common.schemas.provider_schema import ProviderBase
 
 from .base import BaseProviderAdapter
 from .exceptions import ProviderConfigError, ProviderNotSupportedError

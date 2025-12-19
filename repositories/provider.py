@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from models.installation import Installation
-from models.microcontroller import Microcontroller
-from models.provider import Provider
-
-from .base import BaseRepository
+from smart_common.models.installation import Installation
+from smart_common.models.microcontroller import Microcontroller
+from smart_common.models.provider import Provider
+from smart_common.repositories.base import BaseRepository
 
 
 class ProviderRepository(BaseRepository[Provider]):

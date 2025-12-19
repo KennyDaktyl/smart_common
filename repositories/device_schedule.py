@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from models.device_schedule import DeviceSchedule
+from smart_common.models.device_schedule import DeviceSchedule
 
-from .base import BaseRepository
+from smart_common.repositories.base import BaseRepository
 
 
 class DeviceScheduleRepository(BaseRepository[DeviceSchedule]):

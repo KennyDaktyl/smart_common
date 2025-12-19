@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 
 from sqlalchemy import and_
 
-from enums.device_event import DeviceEventName, DeviceEventType
-from models.device_event import DeviceEvent
+from smart_common.enums.device_event import DeviceEventName, DeviceEventType
+from smart_common.models.device_event import DeviceEvent
 
-from .base import BaseRepository
+from smart_common.repositories.base import BaseRepository
 
 
 class DeviceEventRepository(BaseRepository[DeviceEvent]):

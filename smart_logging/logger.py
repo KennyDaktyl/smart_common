@@ -1,9 +1,10 @@
+# smart_common/smart_logging/logger.py
 import logging
 import sys
 from datetime import datetime, timezone
 
-from core.config import settings
-from smart_logging.custom_rotating_handler import AdvancedRotatingFileHandler
+from smart_common.core.config import settings
+from smart_common.smart_logging.custom_rotating_handler import AdvancedRotatingFileHandler
 
 
 def setup_logging():

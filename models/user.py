@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db import Base
-from enums.user import UserRole
+from smart_common.core.db import Base
+from smart_common.enums.user import UserRole
 
 
 class User(Base):
@@ -43,6 +43,12 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
-
+    profile = relationship(
+        "UserProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email} role={self.role}>"

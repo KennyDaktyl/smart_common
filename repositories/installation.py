@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from models.installation import Installation
-
-from .base import BaseRepository
+from smart_common.models.installation import Installation
+from smart_common.repositories.base import BaseRepository
 
 
 class InstallationRepository(BaseRepository[Installation]):

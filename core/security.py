@@ -15,8 +15,8 @@ from typing import Any
 from cryptography.fernet import Fernet
 from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
+from smart_common.core.config import settings
 
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def _create_token(
 
     return jwt.encode(
         to_encode,
-        settings.JWT_SECRET,
+        settings.jwt_secret_str,
         algorithm=ALGORITHM,
     )
 
@@ -147,7 +147,7 @@ def decode_token(token: str) -> dict[str, Any]:
     """
     return jwt.decode(
         token,
-        settings.JWT_SECRET,
+        settings.jwt_secret_str,
         algorithms=[ALGORITHM],
     )
 
@@ -184,9 +184,7 @@ def decode_and_validate_token(
 # SECRET ENCRYPTION (TECHNICAL SECRETS)
 # ---------------------------------------------------------------------
 
-fernet = Fernet(
-    settings.FERNET_KEY.encode() if isinstance(settings.FERNET_KEY, str) else settings.FERNET_KEY
-)
+fernet = Fernet(settings.fernet_key_bytes)
 
 
 def encrypt_secret(value: str) -> str:

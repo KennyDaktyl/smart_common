@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric
 
-from core.db import Base
+from smart_common.core.db import Base
 
 
 class ProviderPowerRecord(Base):

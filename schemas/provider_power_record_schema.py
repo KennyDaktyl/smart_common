@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from pydantic import Field
 
-from schemas.base import APIModel, ORMModel
+from smart_common.schemas.base import APIModel, ORMModel
 
 
 class ProviderPowerRecordBase(APIModel):

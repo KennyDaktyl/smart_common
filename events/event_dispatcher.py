@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, Optional, Union
 
 from pydantic import BaseModel
 
-from enums.event import EventType
+from smart_common.enums.event import EventType
 
 
 class EventDispatcher:

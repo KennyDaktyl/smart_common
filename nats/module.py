@@ -5,10 +5,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from events.event_dispatcher import EventDispatcher
-from nats.client import NATSClient
-from nats.listener import NatsListener
-from nats.publisher import NatsPublisher
+from smart_common.events.event_dispatcher import EventDispatcher
+from smart_common.nats.client import NATSClient
+from smart_common.nats.listener import NatsListener
+from smart_common.nats.publisher import NatsPublisher
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import Boolean, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db import Base
+from smart_common.core.db import Base
 
 
 class DeviceSchedule(Base):

@@ -6,9 +6,9 @@ from uuid import UUID
 
 from pydantic import Field
 
-from enums.provider import ProviderKind, ProviderType, ProviderVendor
-from enums.unit import PowerUnit
-from schemas.base import APIModel, ORMModel
+from smart_common.enums.provider import ProviderKind, ProviderType, ProviderVendor
+from smart_common.enums.unit import PowerUnit
+from smart_common.schemas.base import APIModel, ORMModel
 
 
 class ProviderBase(APIModel):

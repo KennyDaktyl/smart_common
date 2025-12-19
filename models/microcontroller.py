@@ -9,8 +9,8 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db import Base
-from enums.microcontroller import MicrocontrollerType
+from smart_common.core.db import Base
+from smart_common.enums.microcontroller import MicrocontrollerType
 
 
 class Microcontroller(Base):

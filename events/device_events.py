@@ -1,7 +1,7 @@
 from typing import List, Optional, Union
 
-from enums.event import EventType
-from schemas.base import APIModel
+from smart_common.enums.event import EventType
+from smart_common.schemas.base import APIModel
 
 
 class BaseEvent(APIModel):
@@ -66,3 +66,11 @@ class DeviceEventUnion(BaseEvent):
         DeviceCommandPayload,
         DeviceDeletePayload,
     ]
+
+
+class DeviceDeletePayload(APIModel):
+    device_id: int
+
+
+class DeviceDeletedEvent(BaseEvent):
+    payload: DeviceDeletePayload

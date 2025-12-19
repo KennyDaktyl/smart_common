@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from schemas.provider_schema import ProviderBase
+from smart_common.schemas.provider_schema import ProviderBase
 
 from .models import NormalizedMeasurement
 

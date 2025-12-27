@@ -18,7 +18,7 @@ class UserProfileBase(APIModel):
 
 
 class UserProfileUpdate(UserProfileBase):
-    pass
+    id: int
 
 
 class UserProfileResponse(UserProfileBase, ORMModel):

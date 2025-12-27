@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 
@@ -8,12 +10,22 @@ logger = logging.getLogger(__name__)
 
 
 class NATSClient:
+    DEFAULT_RECONNECT_TIME_WAIT = 1.0
+    DEFAULT_MAX_RECONNECT_ATTEMPTS = 2
+
     def __init__(self):
         self.nc = None
         self.js: JetStreamContext | None = None
         self.connected_once = False
+        self.reconnect_time_wait = self.DEFAULT_RECONNECT_TIME_WAIT
+        self.max_reconnect_attempts = self.DEFAULT_MAX_RECONNECT_ATTEMPTS
 
-    async def connect(self, servers: list[str] | None = None, name: str = "smartenergy-service"):
+    async def connect(
+        self,
+        servers: list[str] | None = None,
+        name: str = "smartenergy-service",
+        max_reconnect_attempts: int | None = None,
+    ):
         if self.nc and self.nc.is_connected:
             return
 
@@ -29,13 +41,19 @@ class NATSClient:
 
         servers = servers or ["nats://localhost:4222"]
 
+        max_reconnect_attempts = (
+            max_reconnect_attempts
+            if max_reconnect_attempts is not None
+            else self.max_reconnect_attempts
+        )
+
         logger.info(f"[NATS] Connecting to {servers}...")
 
         self.nc = await nats.connect(
             servers=servers,
             name=name,
-            reconnect_time_wait=2,
-            max_reconnect_attempts=99999,
+            reconnect_time_wait=self.reconnect_time_wait,
+            max_reconnect_attempts=max_reconnect_attempts,
             disconnected_cb=disconnected_cb,
             reconnected_cb=reconnected_cb,
             error_cb=error_cb,

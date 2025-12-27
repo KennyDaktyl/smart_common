@@ -2,11 +2,26 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from smart_common.enums.unit import PowerUnit
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.schemas.base import APIModel, ORMModel
+
+
+class MicrocontrollerProviderConfig(APIModel):
+    uuid: Optional[UUID] = Field(
+        None,
+        description="UUID of the provider",
+    )
+    external_id: str = ""
+
+    @field_validator("uuid", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if v == "":
+            return None
+        return v
 
 
 class ProviderBase(APIModel):
@@ -29,6 +44,7 @@ class ProviderBase(APIModel):
 
 
 class ProviderCreateRequest(APIModel):
+    user_id: Optional[int] = None
     name: str
     provider_type: ProviderType
     kind: ProviderKind

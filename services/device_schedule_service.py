@@ -1,3 +1,4 @@
+import logging
 from typing import Callable
 
 from fastapi import HTTPException, status
@@ -17,6 +18,7 @@ class DeviceScheduleService:
     ):
         self._schedule_repo_factory = schedule_repo_factory
         self._device_repo_factory = device_repo_factory
+        self.logger = logging.getLogger(__name__)
 
     def _schedule_repo(self, db: Session) -> DeviceScheduleRepository:
         return self._schedule_repo_factory(db)
@@ -64,6 +66,15 @@ class DeviceScheduleService:
         self._schedule_repo(db).create(schedule)
         db.commit()
         db.refresh(schedule)
+        self.logger.info(
+            "Schedule created",
+            extra={
+                "user_id": user_id,
+                "microcontroller_id": microcontroller_id,
+                "device_id": payload["device_id"],
+                "schedule_id": schedule.id,
+            },
+        )
         return schedule
 
     def update_schedule(
@@ -90,6 +101,14 @@ class DeviceScheduleService:
         self._schedule_repo(db).update(schedule)
         db.commit()
         db.refresh(schedule)
+        self.logger.info(
+            "Schedule updated",
+            extra={
+                "user_id": user_id,
+                "microcontroller_id": microcontroller_id,
+                "schedule_id": schedule.id,
+            },
+        )
         return schedule
 
     def delete_schedule(
@@ -107,3 +126,11 @@ class DeviceScheduleService:
         )
         self._schedule_repo(db).delete(schedule)
         db.commit()
+        self.logger.info(
+            "Schedule deleted",
+            extra={
+                "user_id": user_id,
+                "microcontroller_id": microcontroller_id,
+                "schedule_id": schedule.id,
+            },
+        )

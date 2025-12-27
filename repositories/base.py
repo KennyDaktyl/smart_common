@@ -3,19 +3,24 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Generic, Type, TypeVar, Union
 
-from sqlalchemy import UUID, String, func
+from sqlalchemy import UUID, String, func, or_
 from sqlalchemy.orm import Query, Session
-
-ModelT = TypeVar("ModelT")
+from sqlalchemy.sql.sqltypes import Integer, Boolean, String
 
 ModelT = TypeVar("ModelT")
 
 
 class BaseRepository(Generic[ModelT]):
+    """
+    Base repository with:
+    - exact filters (filters)
+    - generic search (search)
+    - reusable list & count
+    """
 
     model: Type[ModelT]
-
     searchable_fields: dict[str, Any] = {}
+    search_fields: dict[str, Any] = {}
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -39,10 +44,15 @@ class BaseRepository(Generic[ModelT]):
             if not column:
                 continue
 
+            col_type = column.type
+
             if isinstance(value, Enum):
                 query = query.filter(column == value)
 
-            elif isinstance(column.type, String) and isinstance(value, str):
+            elif isinstance(col_type, Boolean) and isinstance(value, bool):
+                query = query.filter(column.is_(value))
+
+            elif isinstance(col_type, String) and isinstance(value, str):
                 query = query.filter(column.ilike(f"%{value}%"))
 
             else:
@@ -50,11 +60,51 @@ class BaseRepository(Generic[ModelT]):
 
         return query
 
+    def _apply_search(
+        self,
+        query: Query,
+        *,
+        search: str | None,
+        search_fields: dict[str, Any],
+    ) -> Query:
+        if not search or not search_fields:
+            return query
+
+        conditions: list[Any] = []
+
+        for column in search_fields.values():
+            col_type = column.type
+
+            if isinstance(col_type, Integer) and search.isdigit():
+                conditions.append(column == int(search))
+
+            elif isinstance(col_type, String):
+                conditions.append(column.ilike(f"%{search}%"))
+
+        if not conditions:
+            return query
+
+        return query.filter(or_(*conditions))
+
     def get_by_id(self, item_id: int) -> ModelT | None:
         return self.session.get(self.model, item_id)
 
     def get_by_uuid(self, uuid: Union[str, UUID]) -> ModelT | None:
         return self.session.query(self.model).filter_by(uuid=uuid).one_or_none()
+
+    def create(self, obj: ModelT) -> ModelT:
+        self.session.add(obj)
+        self.session.flush()
+        return obj
+
+    def update(self, obj: ModelT) -> ModelT:
+        self.session.add(obj)
+        self.session.flush()
+        return obj
+
+    def delete(self, obj: ModelT) -> None:
+        self.session.delete(obj)
+        self.session.flush()
 
     def list(
         self,
@@ -83,20 +133,49 @@ class BaseRepository(Generic[ModelT]):
         *,
         filters: dict[str, Any] | None = None,
     ) -> int:
-        query = self.session.query(func.count("*"))
-        query = query.select_from(self.model)
+        query = self.session.query(func.count("*")).select_from(self.model)
         query = self._apply_filters(query, filters)
         return query.scalar() or 0
 
-    def create(self, obj: ModelT) -> ModelT:
-        self.session.add(obj)
-        self.session.flush()
-        return obj
+    def list_with_search(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        search: str | None,
+        search_fields: dict[str, Any],
+        order_by: Any | None = None,
+        base_query: Query | None = None,
+    ) -> list[ModelT]:
+        query = base_query or self._base_query()
 
-    def update(self, obj: ModelT) -> ModelT:
-        self.session.add(obj)
-        self.session.flush()
-        return obj
+        query = self._apply_search(
+            query,
+            search=search,
+            search_fields=search_fields,
+        )
+
+        if order_by is not None:
+            query = query.order_by(order_by)
+
+        return query.offset(offset).limit(limit).all()
+
+    def count_with_search(
+        self,
+        *,
+        search: str | None,
+        search_fields: dict[str, Any],
+        base_query: Query | None = None,
+    ) -> int:
+        query = base_query or self._base_query()
+
+        query = self._apply_search(
+            query,
+            search=search,
+            search_fields=search_fields,
+        )
+
+        return query.count()
 
     def partial_update(
         self,
@@ -115,7 +194,3 @@ class BaseRepository(Generic[ModelT]):
         self.session.commit()
         self.session.refresh(obj)
         return obj
-
-    def delete(self, obj: ModelT) -> None:
-        self.session.delete(obj)
-        self.session.flush()

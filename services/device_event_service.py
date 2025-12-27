@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -19,6 +20,7 @@ class DeviceEventService:
     ):
         self._event_repo_factory = event_repo_factory
         self._device_repo_factory = device_repo_factory
+        self.logger = logging.getLogger(__name__)
 
     def _event_repo(self, db: Session) -> DeviceEventRepository:
         return self._event_repo_factory(db)
@@ -47,6 +49,17 @@ class DeviceEventService:
         date_end: datetime | None,
         event_type: DeviceEventType | None = None,
     ) -> dict:
+        self.logger.debug(
+            "Listing device events",
+            extra={
+                "user_id": user_id,
+                "device_id": device_id,
+                "limit": limit,
+                "start": date_start,
+                "end": date_end,
+                "event_type": event_type.value if event_type else None,
+            },
+        )
         device = self._get_device(db, user_id, device_id)
         start = self._ensure_utc(date_start)
         end = self._ensure_utc(date_end)
@@ -89,6 +102,16 @@ class DeviceEventService:
 
         total_minutes_on = int(total_seconds_on // 60)
         energy_value = round(energy_kwh, 3) if energy_kwh else None
+        self.logger.info(
+            "Device event summary",
+            extra={
+                "user_id": user_id,
+                "device_id": device_id,
+                "total_events": len(events),
+                "total_minutes_on": total_minutes_on,
+                "energy_kwh": energy_value,
+            },
+        )
 
         return {
             "events": schema_events,

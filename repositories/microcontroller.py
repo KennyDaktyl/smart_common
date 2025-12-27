@@ -3,14 +3,36 @@ from __future__ import annotations
 from typing import Any, List, Optional
 from uuid import UUID
 
+from fastapi import HTTPException, status
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Query, joinedload
 
 from smart_common.models.microcontroller import Microcontroller
+from smart_common.models.user import User
 from smart_common.repositories.base import BaseRepository
+
+
+search_fields = (
+    cast(Microcontroller.id, String),
+    cast(Microcontroller.uuid, String),
+    cast(Microcontroller.user_id, String),
+    cast(Microcontroller.name, String),
+    User.email,
+    User.id,
+)
 
 
 class MicrocontrollerRepository(BaseRepository[Microcontroller]):
     model = Microcontroller
+
+    ADMIN_UPDATE_FIELDS = {
+        "name",
+        "description",
+        "software_version",
+        "max_devices",
+        "enabled",
+        "user_id",
+    }
 
     def get_by_uuid(self, uuid: UUID) -> Optional[Microcontroller]:
         return self.session.query(self.model).filter(self.model.uuid == uuid).first()
@@ -60,6 +82,18 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         self.session.flush()
         return True
 
+    def delete_by_id(self, microcontroller_id: int) -> None:
+        microcontroller = self.get_by_id(microcontroller_id)
+
+        if not microcontroller:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Microcontroller not found",
+            )
+
+        self.session.delete(microcontroller)
+        self.session.commit()
+
     def get_full_for_user(self, user_id: int):
         microcontrollers = (
             self.session.query(self.model)
@@ -105,9 +139,17 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
 
         return query.all()
 
-    def list_all_for_admin(self):
-        return (
+    def list_admin(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        search: str | None,
+        order_by: Any | None = None,
+    ) -> list[Microcontroller]:
+        query = (
             self.session.query(self.model)
+            .outerjoin(User)
             .options(
                 joinedload(self.model.user),
                 joinedload(self.model.devices),
@@ -115,13 +157,28 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
                 joinedload(self.model.power_provider),
                 joinedload(self.model.sensor_capabilities),
             )
-            .all()
         )
 
-    def get_full_by_uuid(self, uuid: UUID) -> Microcontroller | None:
+        if search:
+            query = self._apply_microcontroller_search(query, search)
+
+        if order_by is not None:
+            query = query.order_by(order_by)
+
+        return query.offset(offset).limit(limit).all()
+
+    def count_admin(self, *, search: str | None) -> int:
+        query = self.session.query(self.model).outerjoin(User)
+
+        if search:
+            query = self._apply_microcontroller_search(query, search)
+
+        return query.count()
+
+    def get_full_by_id(self, id: int) -> Microcontroller | None:
         return (
             self.session.query(self.model)
-            .filter(self.model.uuid == uuid)
+            .filter(self.model.id == id)
             .options(
                 joinedload(self.model.user),
                 joinedload(self.model.devices),
@@ -131,3 +188,21 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
             )
             .one_or_none()
         )
+
+    def _apply_microcontroller_search(self, query, search: str):
+        conditions = []
+
+        if search.isdigit():
+            value = int(search)
+            conditions.append(self.model.id == value)
+            conditions.append(self.model.user_id == value)
+
+        try:
+            uuid = UUID(search)
+            conditions.append(self.model.uuid == uuid)
+        except ValueError:
+            pass
+
+        conditions.append(User.email.ilike(f"%{search}%"))
+
+        return query.filter(or_(*conditions))

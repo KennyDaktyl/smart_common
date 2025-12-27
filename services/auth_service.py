@@ -36,6 +36,8 @@ class AuthService:
         if not user.is_active:
             raise HTTPException(status_code=403, detail="Account is not active")
 
+        logger.info("User login succeeded id=%s email=%s", user.id, user.email)
+
         return self._build_tokens(user)
 
     def refresh(self, refresh_token: str) -> tuple[str, str]:
@@ -50,6 +52,8 @@ class AuthService:
         user = self.user_repo.get_by_id(int(user_id))
         if not user or not user.is_active:
             raise HTTPException(status_code=401, detail="User not found or inactive")
+
+        logger.info("Refresh token rotated for user id=%s", user.id)
 
         return self._build_tokens(user)
 
@@ -157,6 +161,7 @@ class AuthService:
         if user.is_active:
             return
 
+        logger.info("Confirming email for user id=%s", user.id)
         self.user_repo.activate_user(user)
 
     # ------------------------------------------------------------------
@@ -166,6 +171,10 @@ class AuthService:
     def request_password_reset(self, email: str) -> None:
         user = self.user_repo.get_by_email(email)
         if not user or not user.is_active:
+            logger.info(
+                "Password reset skipped for email=%s (user not found or inactive)",
+                email,
+            )
             return
 
         token = create_action_token(
@@ -173,6 +182,7 @@ class AuthService:
             expires_delta=self.PASSWORD_RESET_EXPIRE,
         )
         send_password_reset_email_task.delay(user.email, token)
+        logger.info("Password reset token generated for user id=%s", user.id)
         return token
 
     def reset_password(self, token: str, new_password: str) -> None:
@@ -189,6 +199,7 @@ class AuthService:
             raise HTTPException(status_code=404, detail="User not found")
 
         self.user_repo.update_password(user, hash_password(new_password))
+        logger.info("Password reset confirmed for user id=%s", user.id)
 
     # ------------------------------------------------------------------
     # TOKENS

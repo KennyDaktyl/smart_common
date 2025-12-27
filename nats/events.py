@@ -74,7 +74,7 @@ class HeartbeatEvent(Event):
 
 class DeviceEventPayload(BaseModel):
     device_id: int
-    installation_id: int
+    microcontroller_id: int
     value: float | None
     status: str
     timestamp: datetime

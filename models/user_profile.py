@@ -10,38 +10,24 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     id = Column(Integer, primary_key=True)
-
     user_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
-
-    # ---------------------------------
-    # PERSONAL
-    # ---------------------------------
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     phone_number = Column(String(32), nullable=True)
-
-    # ---------------------------------
-    # COMPANY (OPTIONAL)
-    # ---------------------------------
     company_name = Column(String(255), nullable=True)
     company_vat = Column(String(64), nullable=True)
     company_address = Column(String(512), nullable=True)
-
-    # ---------------------------------
-    # META
-    # ---------------------------------
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,
         default=func.now(),
         server_default=func.now(),
     )
-
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -49,9 +35,6 @@ class UserProfile(Base):
         onupdate=func.now(),
     )
 
-    # ---------------------------------
-    # RELATIONS
-    # ---------------------------------
     user = relationship(
         "User",
         back_populates="profile",

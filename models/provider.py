@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,6 +24,14 @@ from smart_common.enums.unit import PowerUnit
 
 class Provider(Base):
     __tablename__ = "providers"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "vendor",
+            "external_id",
+            name="uq_providers_user_vendor_external",
+        ),
+    )
 
     # ---------- identity ----------
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -35,9 +44,15 @@ class Provider(Base):
         index=True,
     )
 
-    microcontroller_id: Mapped[int] = mapped_column(
-        ForeignKey("microcontrollers.id", ondelete="CASCADE"),
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+
+    microcontroller_id: Mapped[int | None] = mapped_column(
+        ForeignKey("microcontrollers.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
 
@@ -58,6 +73,8 @@ class Provider(Base):
         Enum(ProviderVendor, name="provider_vendor_enum"),
         nullable=True,
     )
+
+    external_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     unit: Mapped[PowerUnit | None] = mapped_column(
         Enum(PowerUnit, name="power_unit_enum"),
@@ -93,5 +110,45 @@ class Provider(Base):
 
     microcontroller = relationship(
         "Microcontroller",
-        back_populates="providers",
+        back_populates="sensor_providers",
+        foreign_keys=[microcontroller_id],
     )
+    user = relationship("User")
+    credentials = relationship(
+        "ProviderCredential",
+        back_populates="provider",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class ProviderCredential(Base):
+    __tablename__ = "provider_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,  # 1:1
+        index=True,
+    )
+
+    # --- auth data ---
+    login: Mapped[str | None] = mapped_column(String, nullable=True)
+    password: Mapped[str | None] = mapped_column(String, nullable=True)
+    token: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    provider = relationship("Provider", back_populates="credentials")

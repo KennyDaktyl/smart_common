@@ -5,12 +5,17 @@ from datetime import datetime, timezone
 from uuid import UUID as UUIDType
 from uuid import uuid4
 
+from pydantic import BaseModel
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from sqlalchemy.ext.mutable import MutableDict
+from sqlalchemy.dialects.postgresql import JSONB
 from smart_common.core.db import Base
 from smart_common.enums.microcontroller import MicrocontrollerType
+from smart_common.models.microcontroller_sensor_capability import (
+    MicrocontrollerSensorCapability,
+)
 
 
 class Microcontroller(Base):
@@ -26,9 +31,9 @@ class Microcontroller(Base):
         default=uuid4,
     )
 
-    installation_id: Mapped[int] = mapped_column(
-        ForeignKey("installations.id", ondelete="CASCADE"),
-        nullable=False,
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
 
@@ -46,6 +51,17 @@ class Microcontroller(Base):
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    power_provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "providers.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_microcontrollers_power_provider_id",
+        ),
+        nullable=True,
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -56,14 +72,24 @@ class Microcontroller(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    config: Mapped[dict] = mapped_column(
+        MutableDict.as_mutable(JSONB),
+        nullable=False,
+    )
 
     # --- Relations ---
-    installation = relationship("Installation", back_populates="microcontrollers")
+    user = relationship("User", back_populates="microcontrollers")
 
-    providers = relationship(
+    sensor_providers = relationship(
         "Provider",
         back_populates="microcontroller",
         cascade="all, delete-orphan",
+        foreign_keys="Provider.microcontroller_id",
+    )
+
+    power_provider = relationship(
+        "Provider",
+        foreign_keys=[power_provider_id],
     )
 
     devices = relationship(
@@ -72,5 +98,18 @@ class Microcontroller(Base):
         cascade="all, delete-orphan",
     )
 
+    sensor_capabilities = relationship(
+        "MicrocontrollerSensorCapability",
+        back_populates="microcontroller",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def assigned_sensors(self) -> list[str]:
+        # Immutable hardware capabilities declared at provisioning time.
+        return [capability.sensor_type for capability in self.sensor_capabilities]
+
     def __repr__(self) -> str:
-        return f"<Microcontroller id={self.id} " f"type={self.type} " f"name={self.name}>"
+        return (
+            f"<Microcontroller id={self.id} " f"type={self.type} " f"name={self.name}>"
+        )

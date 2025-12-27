@@ -38,8 +38,8 @@ class User(Base):
 
     # --- Relations ---
 
-    installations: Mapped[list["Installation"]] = relationship(
-        "Installation",
+    microcontrollers: Mapped[list["Microcontroller"]] = relationship(
+        "Microcontroller",
         back_populates="user",
         cascade="all, delete-orphan",
     )

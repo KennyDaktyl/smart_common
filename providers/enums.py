@@ -19,16 +19,16 @@ class ProviderVendor(str, Enum):
     # API
     HUAWEI = "huawei"
     GOODWE = "goodwe"
-    SMA = "sma"
-    SOLAREDGE = "solaredge"
-    FRONIUS = "fronius"
-    GROWATT = "growatt"
-    SUNGROW = "sungrow"
-    KOSTAL = "kostal"
-    VICTRON = "victron"
-    ENPHASE = "enphase"
+    # SMA = "sma"
+    # SOLAREDGE = "solaredge"
+    # FRONIUS = "fronius"
+    # GROWATT = "growatt"
+    # SUNGROW = "sungrow"
+    # KOSTAL = "kostal"
+    # VICTRON = "victron"
+    # ENPHASE = "enphase"
 
-    # Sensors (hardware-only; must be validated against microcontroller capabilities)
-    DHT22 = "dht22"
-    BME280 = "bme280"
-    BH1750 = "bh1750"
+    # # Sensors (hardware-only; must be validated against microcontroller capabilities)
+    # DHT22 = "dht22"
+    # BME280 = "bme280"
+    # BH1750 = "bh1750"

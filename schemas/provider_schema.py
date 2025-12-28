@@ -59,12 +59,10 @@ class ProviderCreateRequest(APIModel):
     value_max: float
     enabled: bool = True
 
-    config: Dict[str, Any]
+    config: Dict[str, Any] | None = None
+    credentials: Optional[Dict[str, str]] = None
 
-    credentials: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Provider credentials (if required)",
-    )
+    wizard_session_id: str | None = None
 
 
 class ProviderUpdateRequest(APIModel):

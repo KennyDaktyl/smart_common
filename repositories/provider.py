@@ -53,3 +53,22 @@ class ProviderRepository(BaseRepository[Provider]):
             )
             .first()
         )
+
+    def exists_user_provider_with_external_id(
+        self,
+        *,
+        user_id: int,
+        vendor: ProviderVendor,
+        external_id: str,
+    ) -> bool:
+        query = (
+            self.session.query(self.model.id)
+            .filter(
+                self.model.user_id == user_id,
+                self.model.vendor == vendor,
+                self.model.external_id == external_id,
+                self.model.microcontroller_id.is_(None),
+            )
+            .limit(1)
+        )
+        return self.session.query(query.exists()).scalar()

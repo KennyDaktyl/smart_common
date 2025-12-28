@@ -1,4 +1,4 @@
-# logging/custom_rotating_handler.py
+# smart_common/smart_logging/custom_rotating_handler.py
 import logging
 import os
 from datetime import datetime, timedelta
@@ -24,7 +24,11 @@ class AdvancedRotatingFileHandler(TimedRotatingFileHandler):
             utc=False,
         )
 
-    def rotate(self, source, dest):
+    def doRollover(self):
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+
         now = datetime.now()
         year = now.strftime("%Y")
         month = now.strftime("%m")
@@ -34,30 +38,8 @@ class AdvancedRotatingFileHandler(TimedRotatingFileHandler):
 
         dest_file = os.path.join(target_dir, f"{now.strftime('%Y-%m-%d')}.log")
 
-        if os.path.exists(source):
-            os.rename(source, dest_file)
+        if os.path.exists(self.baseFilename):
+            os.rename(self.baseFilename, dest_file)
 
+        self.stream = self._open()
         self._cleanup_old_logs()
-
-    def _cleanup_old_logs(self):
-        cutoff = datetime.now() - timedelta(days=self.retention_days)
-
-        for year_dir in os.listdir(self.base_log_dir):
-            year_path = os.path.join(self.base_log_dir, year_dir)
-            if not os.path.isdir(year_path):
-                continue
-
-            for month_dir in os.listdir(year_path):
-                month_path = os.path.join(year_path, month_dir)
-                if not os.path.isdir(month_path):
-                    continue
-
-                for filename in os.listdir(month_path):
-                    file_path = os.path.join(month_path, filename)
-                    try:
-                        file_time = datetime.strptime(filename.replace(".log", ""), "%Y-%m-%d")
-                    except:
-                        continue
-
-                    if file_time < cutoff:
-                        os.remove(file_path)

@@ -1,8 +1,4 @@
 # smart_common/providers/provider_config/huawei/auth.py
-from pydantic import Field
-from smart_common.schemas.base import APIModel
+from smart_common.providers.schemas.wizard.huawei import HuaweiAuthStep
 
-
-class HuaweiAuthStep(APIModel):
-    username: str = Field(..., description="Huawei FusionSolar username")
-    password: str = Field(..., description="Huawei FusionSolar password")
+__all__ = ["HuaweiAuthStep"]

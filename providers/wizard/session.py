@@ -1,11 +1,9 @@
-# smart_common/providers/wizard/store.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any, Dict
-from uuid import uuid4
 
 from smart_common.providers.enums import ProviderVendor
 
@@ -22,14 +20,16 @@ class WizardSession:
 
 
 class WizardSessionStore:
-    """In-memory store that keeps wizard state between requests."""
+    """In-memory store keeping wizard sessions while flows are active."""
 
-    def __init__(self, ttl_seconds: int = 600):
+    def __init__(self, ttl_seconds: int = 600) -> None:
         self._sessions: Dict[str, WizardSession] = {}
-        self._lock = Lock()
         self._ttl = timedelta(seconds=ttl_seconds)
+        self._lock = Lock()
 
     def create(self, vendor: ProviderVendor) -> WizardSession:
+        from uuid import uuid4
+
         with self._lock:
             session_id = uuid4().hex
             session = WizardSession(
@@ -67,3 +67,6 @@ class WizardSessionStore:
         ]
         for session_id in expired:
             self._sessions.pop(session_id, None)
+
+
+DEFAULT_WIZARD_SESSION_STORE = WizardSessionStore()

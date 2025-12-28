@@ -14,7 +14,10 @@ from smart_common.repositories.microcontroller import MicrocontrollerRepository
 from smart_common.repositories.provider import ProviderRepository
 from smart_common.core.security import encrypt_secret
 from smart_common.repositories.provider_credentials import ProviderCredentialRepository
-from smart_common.providers.registry import PROVIDER_DEFINITIONS, resolve_sensor_type
+from smart_common.providers.definitions.base import ProviderDefinition
+from smart_common.providers.definitions.registry import PROVIDER_DEFINITION_REGISTRY
+from smart_common.providers.registry import resolve_sensor_type
+from smart_common.providers.services.wizard_service import WizardService
 
 
 class ProviderService:
@@ -112,17 +115,17 @@ class ProviderService:
                 detail=f"Invalid provider vendor: {vendor}",
             )
 
-    def _resolve_definition(self, vendor: ProviderVendor) -> dict:
-        meta = PROVIDER_DEFINITIONS.get(vendor)
-        if not meta:
+    def _resolve_definition(self, vendor: ProviderVendor) -> ProviderDefinition:
+        definition = PROVIDER_DEFINITION_REGISTRY.get(vendor)
+        if not definition:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Unsupported provider vendor: {vendor.value}",
             )
-        return meta
+        return definition
 
-    def _validate_config(self, meta: dict, config: dict) -> dict:
-        schema = meta.get("config_schema")
+    def _validate_config(self, definition: ProviderDefinition, config: dict) -> dict:
+        schema = definition.config_schema
         if not schema:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -130,8 +133,12 @@ class ProviderService:
             )
         return schema.model_validate(config or {}).model_dump()
 
-    def _validate_credentials(self, meta: dict, credentials: dict | None) -> dict | None:
-        schema = meta.get("credentials_schema")
+    def _validate_credentials(
+        self,
+        definition: ProviderDefinition,
+        credentials: dict | None,
+    ) -> dict | None:
+        schema = definition.credentials_schema
         if not schema:
             return None
 
@@ -179,15 +186,15 @@ class ProviderService:
         config: dict,
     ) -> str:
         if vendor == ProviderVendor.HUAWEI:
-            device_id = config.get("device_id") or payload.get("external_id")
-            if not device_id:
+            external_id = config.get("inverter_id") or payload.get("external_id")
+
+            if not external_id:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Huawei provider requires device_id in config",
+                    detail="Huawei provider requires inverter_id in config",
                 )
-            return self._validate_external_id(device_id)
 
-        return self._validate_external_id(payload.get("external_id"))
+            return self._validate_external_id(external_id)
 
     def _ensure_unique_provider(
         self,
@@ -205,6 +212,25 @@ class ProviderService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Provider with this vendor and external_id already exists",
+            )
+
+    def _ensure_external_id_unique_for_user(
+        self,
+        *,
+        db: Session,
+        user_id: int,
+        vendor: ProviderVendor,
+        external_id: str,
+    ) -> None:
+        # TODO: enforce the same rule with a partial unique constraint
+        if self._repo(db).exists_user_provider_with_external_id(
+            user_id=user_id,
+            vendor=vendor,
+            external_id=external_id,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Provider with external_id '{external_id}' already exists for this user",
             )
 
     # ---------- queries ----------
@@ -247,8 +273,8 @@ class ProviderService:
         microcontroller = self._ensure_microcontroller(db, user_id, mc_uuid)
 
         vendor = self._resolve_vendor(payload.get("vendor"))
-        meta = self._resolve_definition(vendor)
-        if meta["provider_type"] != ProviderType.SENSOR:
+        definition = self._resolve_definition(vendor)
+        if definition.provider_type != ProviderType.SENSOR:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Only SENSOR providers can be attached to a microcontroller",
@@ -260,7 +286,7 @@ class ProviderService:
             db=db,
             payload=payload,
             vendor=vendor,
-            meta=meta,
+            definition=definition,
             user_id=microcontroller.user_id,
             microcontroller_id=microcontroller.id,
         )
@@ -272,23 +298,74 @@ class ProviderService:
         user_id: int,
         payload: dict,
     ) -> Provider:
+
         vendor = self._resolve_vendor(payload.get("vendor"))
-        meta = self._resolve_definition(vendor)
-        if meta["provider_type"] != ProviderType.API:
+        definition = self._resolve_definition(vendor)
+
+        if definition.provider_type != ProviderType.API:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Only API providers can be created at user scope",
             )
 
+        raw_config = payload.get("config")
+        if raw_config is not None:
+            validated_config = self._validate_config(definition, raw_config)
+            payload["config"] = validated_config
+        else:
+            validated_config = {}
+
+        external_id = self._derive_external_id(
+            vendor,
+            payload,
+            validated_config,
+        )
+
+        self._ensure_external_id_unique_for_user(
+            db=db,
+            user_id=user_id,
+            vendor=vendor,
+            external_id=external_id,
+        )
+
+        payload["external_id"] = external_id
+
+        if "min_power_kw" in validated_config:
+            payload["value_min"] = validated_config["min_power_kw"]
+
+        if "max_power_kw" in validated_config:
+            payload["value_max"] = validated_config["max_power_kw"]
+
         provider = self._create_provider(
             db=db,
             payload=payload,
             vendor=vendor,
-            meta=meta,
+            definition=definition,
             user_id=user_id,
             microcontroller_id=None,
         )
+
         return provider
+
+    def create_provider_from_wizard(
+        self,
+        db: Session,
+        user_id: int,
+        wizard_session_id: str,
+        payload: dict,
+    ) -> Provider:
+        wizard_service = WizardService(definitions=PROVIDER_DEFINITION_REGISTRY)
+        vendor, config, credentials, _context = wizard_service.consume_session(
+            wizard_session_id
+        )
+
+        request_payload = dict(payload)
+        request_payload["vendor"] = vendor
+        request_payload["config"] = config
+        if credentials:
+            request_payload["credentials"] = credentials
+
+        return self.create_for_user(db, user_id, request_payload)
 
     def update(
         self,
@@ -329,7 +406,9 @@ class ProviderService:
             meta = self._resolve_definition(provider.vendor)
             changes["config"] = self._validate_config(meta, changes["config"])
 
-        if changes.get("enabled") is True and not self._is_provider_attached(db, provider):
+        if changes.get("enabled") is True and not self._is_provider_attached(
+            db, provider
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Provider must be attached to a microcontroller before enabling",
@@ -490,13 +569,13 @@ class ProviderService:
         db: Session,
         payload: dict,
         vendor: ProviderVendor,
-        meta: dict,
+        definition: ProviderDefinition,
         *,
         user_id: int,
         microcontroller_id: int | None,
     ) -> Provider:
         payload_type = payload.get("provider_type")
-        if payload_type and payload_type != meta["provider_type"]:
+        if payload_type and payload_type != definition.provider_type:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Provider type does not match vendor definition",
@@ -523,14 +602,14 @@ class ProviderService:
             )
 
         payload["vendor"] = vendor
-        payload["provider_type"] = meta["provider_type"]
-        payload["config"] = self._validate_config(meta, config)
+        payload["provider_type"] = definition.provider_type
+        payload["config"] = self._validate_config(definition, config)
         payload["user_id"] = user_id
         payload["microcontroller_id"] = microcontroller_id
         payload["external_id"] = external_id
         # Providers are enabled only when explicitly attached to a microcontroller.
         payload["enabled"] = False
-        validated_credentials = self._validate_credentials(meta, credentials)
+        validated_credentials = self._validate_credentials(definition, credentials)
         payload.pop("credentials", None)
 
         provider = Provider(**payload)

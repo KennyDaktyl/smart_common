@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
-from smart_common.providers.base.provider_adapter import BaseProviderAdapter
+from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.exceptions import ProviderError, ProviderFetchError
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.providers.provider_config.config import provider_settings
@@ -61,7 +60,13 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             "userName": self.username,
             "systemCode": self.password,
         }
-
+        logger.info(
+            "Huawei login request",
+            extra={
+                "endpoint": "login",
+                "payload": payload,
+            },
+        )
         try:
             response = self._request(
                 "POST",
@@ -76,6 +81,15 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
                 "Huawei login failed",
                 details={"error": str(exc)},
             ) from exc
+
+        logger.info(
+            "Huawei login response",
+            extra={
+                "status_code": response.status_code,
+                "ok": response.ok,
+                "body": response.text,
+            },
+        )
 
         if not response.ok:
             raise ProviderError(
@@ -117,17 +131,46 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
     def _post(self, endpoint: str, payload: dict | None = None) -> dict:
         self._ensure_login()
+        safe_payload = payload or {}
+
+        logger.info(
+            "Huawei API request",
+            extra={
+                "endpoint": endpoint,
+                "payload": safe_payload,
+            },
+        )
 
         response = self._request(
             "POST",
             endpoint,
-            json_data=payload or {},
+            json_data=safe_payload,
+        )
+
+        logger.info(
+            "Huawei API response",
+            extra={
+                "endpoint": endpoint,
+                "status_code": response.status_code,
+                "ok": response.ok,
+                "body": response.text,
+            },
         )
 
         if response.status_code == 401:
             logger.warning("Huawei 401 → re-login")
             self._login()
             response = self._request("POST", endpoint, json_data=payload or {})
+
+            logger.info(
+                "Huawei API response (after relogin)",
+                extra={
+                    "endpoint": endpoint,
+                    "status_code": response.status_code,
+                    "ok": response.ok,
+                    "body": response.text,
+                },
+            )
 
         result = response.json()
 
@@ -139,6 +182,15 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             self._login()
             response = self._request("POST", endpoint, json_data=payload or {})
             result = response.json()
+
+            logger.info(
+                "Huawei API response (USER_MUST_RELOGIN)",
+                extra={
+                    "endpoint": endpoint,
+                    "status_code": response.status_code,
+                    "body": response.text,
+                },
+            )
 
         if not result.get("success", False):
             raise ProviderError(
@@ -164,19 +216,49 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         result = self._post("getStationList")
         stations = result.get("data", [])
 
+        logger.info(
+            "Huawei stations fetched",
+            extra={"count": len(stations)},
+        )
+
         return [self._normalize_station(s) for s in stations]
 
     def list_devices(self, station_code: str) -> list[Mapping[str, Any]]:
-        logger.info(
-            "Huawei → list devices",
-            extra={"station_code": station_code},
-        )
+        logger.info("Huawei → list devices", extra={"station_code": station_code})
 
         payload = {"stationCodes": station_code}
         result = self._post("getDevList", payload)
         devices = result.get("data", [])
 
-        return [self._normalize_device(d) for d in devices]
+        inverters = [d for d in devices if d.get("devTypeId") == 1]
+
+        logger.info(
+            "Huawei inverters fetched",
+            extra={
+                "station_code": station_code,
+                "count": len(inverters),
+            },
+        )
+
+        return [self._normalize_device(d) for d in inverters]
+
+    def get_production(self, device_id: str) -> dict:
+        payload = {"devTypeId": "1", "devIds": device_id}
+        logger.info(
+            "Huawei → get production",
+            extra={payload},
+        )
+
+        result = self._post("getDevRealKpi", payload)
+        logger.info(
+            "Huawei API response",
+            extra={
+                "endpoint": "getDevRealKpi",
+                "status_code": result.get("status_code"),
+                "body": result.get("body"),
+            },
+        )
+        return result.get("data", [])
 
     # ------------------------------------------------------------------
     # Normalization
@@ -193,9 +275,15 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
     def _normalize_device(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
         return {
-            "device_id": raw.get("devId"),
+            "device_id": raw.get("id"),
             "name": raw.get("devName"),
             "station_code": raw.get("stationCode"),
-            "type": raw.get("devTypeId"),
+            "device_type": raw.get("devTypeId"),
+            "model": raw.get("model"),
+            "inv_type": raw.get("invType"),
+            "latitude": raw.get("latitude"),
+            "longitude": raw.get("longitude"),
+            "optimizer_count": raw.get("optimizerNumber"),
+            "software_version": raw.get("softwareVersion"),
             "raw": dict(raw),
         }

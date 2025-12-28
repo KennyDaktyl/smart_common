@@ -23,6 +23,3 @@ class WizardSessionStateError(WizardError):
 
 class WizardResultError(WizardError):
     """Raised when a wizard step produces inconsistent result data."""
-
-class WizardSessionExpiredError(WizardError):
-    """Raised when a previously created wizard session is no longer valid."""

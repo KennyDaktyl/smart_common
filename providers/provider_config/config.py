@@ -5,7 +5,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ProviderIntegrationSettings(BaseSettings):
     """
     Configuration for external provider integrations (Huawei, etc.).
-
     This is DOMAIN configuration, not application core config.
     """
 

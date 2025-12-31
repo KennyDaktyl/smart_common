@@ -5,7 +5,7 @@ from smart_common.providers.wizard.base import ProviderWizard
 from smart_common.providers.wizard.goodwe.steps import (
     GoodWeAuthWizardStep,
     GoodWeDetailsWizardStep,
-    GoodWeFinalizeWizardStep,
+    GoodWePowerStationWizardStep,
 )
 
 
@@ -16,7 +16,7 @@ class GoodWeWizard(ProviderWizard):
         super().__init__(
             steps=[
                 GoodWeAuthWizardStep(),
-                GoodWeFinalizeWizardStep(),
+                GoodWePowerStationWizardStep(),
                 GoodWeDetailsWizardStep(),
             ]
         )

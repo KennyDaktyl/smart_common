@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from smart_common.providers.schemas.wizard.goodwe import (
-    GoodWePowerStationStep,
     GoodWeAuthStep,
-    GoodWeFinalSummary,
+    GoodWePowerStationStep,
+    GoodWeDetailsSummary,
 )
 from smart_common.providers.schemas.wizard.huawei import (
     HuaweiAuthStep,
@@ -17,5 +17,5 @@ __all__ = [
     "HuaweiDeviceStep",
     "GoodWeAuthStep",
     "GoodWePowerStationStep",
-    "GoodWeFinalSummary",
+    "GoodWeDetailsSummary",
 ]

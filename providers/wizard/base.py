@@ -21,12 +21,12 @@ class WizardStepResult:
 
 class WizardStep(ABC):
     name: str
-    schema: Type[BaseModel]
+    schema: Type[BaseModel] | None
 
     @abstractmethod
     def process(
         self,
-        payload: BaseModel,
+        payload: BaseModel | None,
         session_data: Mapping[str, Any],
     ) -> WizardStepResult:
         """Execute handler logic for this step."""

@@ -45,7 +45,13 @@ class WizardService:
         if not step:
             raise WizardStepNotFoundError(f"Initial step '{step_name}' missing")
 
-        return step_name, step.schema
+        schema_cls = step.schema
+        if schema_cls is None:
+            raise WizardStepNotFoundError(
+                f"Initial step '{step_name}' must expose a schema"
+            )
+
+        return step_name, schema_cls
 
     def run_step(
         self,
@@ -92,8 +98,13 @@ class WizardService:
             },
         )
 
-        model = step.schema.model_validate(payload or {})
-        payload_values = model.model_dump()
+        schema_cls = step.schema
+        if schema_cls is None:
+            model = None
+            payload_values = {}
+        else:
+            model = schema_cls.model_validate(payload or {})
+            payload_values = model.model_dump()
 
         logger.info(
             "Wizard step payload validated",
@@ -168,10 +179,14 @@ class WizardService:
             },
         )
 
+        next_schema = next_definition.schema
+
         return {
             "vendor": vendor,
             "step": next_step,
-            "schema": next_definition.schema.model_json_schema(),
+            "schema": next_schema.model_json_schema()
+            if next_schema is not None
+            else None,
             "options": dict(result.options),
             "context": dict(session.context),
             "is_complete": False,

@@ -10,13 +10,13 @@ class GoodWeAuthStep(APIModel):
         ...,
         title="Username",
         description="GoodWe / SEMS login",
-        json_schema_extra={"x-ui": {"widget": "text"}},
+        json_schema_extra={"x-ui": {"widget": "text", "required": True }},
     )
     password: str = Field(
         ...,
         title="Password",
         description="GoodWe / SEMS password",
-        json_schema_extra={"x-ui": {"widget": "password"}},
+        json_schema_extra={"x-ui": {"widget": "password", "required": True }},
     )
 
 
@@ -43,6 +43,7 @@ class GoodWeDetailsForm(APIModel):
             "x-ui": {
                 "widget": "text",
                 "readonly": True,
+                "required": True 
             }
         },
     )
@@ -51,7 +52,7 @@ class GoodWeDetailsForm(APIModel):
         None,
         title="Station name",
         description="Power station name",
-        json_schema_extra={"x-ui": {"widget": "text"}},
+        json_schema_extra={"x-ui": {"widget": "text", "required": True }},
     )
 
     address: str | None = Field(
@@ -89,12 +90,19 @@ class GoodWeDetailsForm(APIModel):
         json_schema_extra={"x-ui": {"widget": "text"}},
     )
 
-    max_power_kw: float = Field(
-        20.0,
+    max_power_w: float = Field(
+        20000.0,
         gt=0,
-        title="Max inverter power (kW)",
+        title="Max inverter power (W)",
         description="Maximum inverter power",
-        json_schema_extra={"x-ui": {"widget": "number"}},
+        json_schema_extra={"x-ui": {"widget": "number", "required": True }},
+    )
+    min_power_w: float = Field(
+        0.0,
+        ge=0,
+        title="Min inverter power (W)",
+        description="Minimum inverter power",
+        json_schema_extra={"x-ui": {"widget": "number", "required": True }},
     )
 
 
@@ -106,4 +114,5 @@ class GoodWeDetailsSummary(APIModel):
     battery_capacity_kwh: float | None
     powerstation_type: str | None
     currency: str | None
-    max_power_kw: float = 20.0
+    max_power_w: float = 20000.0
+    min_power_w: float = 0.0

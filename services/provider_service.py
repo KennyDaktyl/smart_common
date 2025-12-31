@@ -586,8 +586,8 @@ class ProviderService:
         external_id = self._derive_external_id(vendor, payload, config)
         self._ensure_unique_provider(db, user_id, vendor, external_id)
 
-        value_min = payload.get("value_min")
-        value_max = payload.get("value_max")
+        value_min = payload.get("value_min", definition.default_value_min)
+        value_max = payload.get("value_max", definition.default_value_max)
 
         if value_min is None or value_max is None:
             raise HTTPException(
@@ -607,8 +607,12 @@ class ProviderService:
         payload["user_id"] = user_id
         payload["microcontroller_id"] = microcontroller_id
         payload["external_id"] = external_id
-        # Providers are enabled only when explicitly attached to a microcontroller.
         payload["enabled"] = False
+        payload["default_expected_interval_sec"] = definition.default_expected_interval_sec
+        
+        if not payload.get("unit"):
+            payload["unit"] = definition.default_unit
+
         validated_credentials = self._validate_credentials(definition, credentials)
         payload.pop("credentials", None)
 

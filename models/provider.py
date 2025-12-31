@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     String,
+    Integer,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -90,7 +91,11 @@ class Provider(Base):
     last_measurement_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-
+    expected_interval_sec: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Expected max interval (seconds) between measurements",
+    )
     # ---------- lifecycle ----------
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -108,6 +113,9 @@ class Provider(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    last_seen_at: datetime | None
+    last_value: float | None
+    
     microcontroller = relationship(
         "Microcontroller",
         back_populates="sensor_providers",

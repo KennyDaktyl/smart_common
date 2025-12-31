@@ -44,23 +44,21 @@ class ProviderBase(APIModel):
 
 
 class ProviderCreateRequest(APIModel):
-    user_id: Optional[int] = None
     name: str
     provider_type: ProviderType
     kind: ProviderKind
     vendor: ProviderVendor
-    external_id: str | None = Field(
-        default=None,
-        description="Vendor-specific identifier used to deduplicate providers",
-    )
-    unit: Optional[PowerUnit]
 
-    value_min: float
-    value_max: float
+    external_id: str | None = None
+    unit: PowerUnit | None = None
+
+    value_min: float | None = None
+    value_max: float | None = None
+
     enabled: bool = True
 
     config: Dict[str, Any] | None = None
-    credentials: Optional[Dict[str, str]] = None
+    credentials: Dict[str, str] | None = None
 
     wizard_session_id: str | None = None
 
@@ -94,7 +92,8 @@ class ProviderResponse(ORMModel):
 
     last_value: Optional[float]
     last_measurement_at: Optional[datetime]
-
+    default_expected_interval_sec: Optional[int]
+    
     enabled: bool
     config: Dict[str, Any]
 

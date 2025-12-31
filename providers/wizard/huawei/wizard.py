@@ -4,8 +4,9 @@ from smart_common.providers.enums import ProviderVendor
 from smart_common.providers.wizard.base import ProviderWizard
 from smart_common.providers.wizard.huawei.steps import (
     HuaweiAuthWizardStep,
-    HuaweiDeviceWizardStep,
     HuaweiStationWizardStep,
+    HuaweiDeviceWizardStep,
+    HuaweiDetailsWizardStep,
 )
 
 
@@ -18,5 +19,6 @@ class HuaweiWizard(ProviderWizard):
                 HuaweiAuthWizardStep(),
                 HuaweiStationWizardStep(),
                 HuaweiDeviceWizardStep(),
+                HuaweiDetailsWizardStep(),
             ]
         )

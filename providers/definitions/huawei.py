@@ -27,5 +27,10 @@ ProviderDefinitionRegistry.register(
             "max_retries": provider_settings.HUAWEI_MAX_RETRIES,
         },
         wizard_cls=HuaweiWizard,
+        default_unit=PowerUnit.KILOWATT,
+        default_value_min=0.0,
+        default_value_max=10.0,
+        default_expected_interval_sec=180,
+
     )
 )

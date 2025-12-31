@@ -1,3 +1,5 @@
+
+# smart_common/providers/wizard/base.py
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -51,3 +53,4 @@ class ProviderWizard(ABC):
     @property
     def step_names(self) -> List[str]:
         return list(self._steps.keys())
+    

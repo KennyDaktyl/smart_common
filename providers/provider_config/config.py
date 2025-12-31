@@ -1,3 +1,4 @@
+# smart_common/providers/provider_config/config.py
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

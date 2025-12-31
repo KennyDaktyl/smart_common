@@ -108,8 +108,8 @@ class GoodWeDetailsWizardStep(WizardStep):
             raise WizardSessionStateError("Missing GoodWe details")
 
         final_config = {
-            **details,  # wartości z API
-            **payload.model_dump(),  # nadpisane przez usera
+            **details,
+            **payload.model_dump(),
         }
 
         return WizardStepResult(

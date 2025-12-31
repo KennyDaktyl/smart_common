@@ -1,3 +1,4 @@
+# smart_common/providers/definitions/base.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -29,6 +30,10 @@ class ProviderDefinition:
     adapter_cls: type["BaseProviderAdapter"] | None = None
     adapter_settings: Mapping[str, Any] = field(default_factory=dict)
     wizard_cls: type["ProviderWizard"] | None = None
+    default_unit: Unit | None
+    default_value_min: float | None = None
+    default_value_max: float | None = None
+    default_expected_interval_sec: int | None = None
 
 
 class ProviderDefinitionRegistry:

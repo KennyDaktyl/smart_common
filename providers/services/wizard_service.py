@@ -16,8 +16,8 @@ from smart_common.providers.wizard.exceptions import (
 from smart_common.providers.wizard.factory import ProviderWizardFactory
 from smart_common.providers.wizard.session import (
     DEFAULT_WIZARD_SESSION_STORE,
-    WizardSessionStore,
 )
+from smart_common.providers.wizard.session.base import BaseWizardSessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +26,11 @@ class WizardService:
     def __init__(
         self,
         definitions: Mapping[ProviderVendor, ProviderDefinition] | None = None,
-        session_store: WizardSessionStore | None = None,
+        session_store: BaseWizardSessionStore | None = None,
     ) -> None:
         self._definitions = definitions or ProviderDefinitionRegistry.all()
         self._wizard_factory = ProviderWizardFactory(self._definitions)
-        self._session_store = session_store or DEFAULT_WIZARD_SESSION_STORE
+        self._session_store = session_store
 
     # ------------------------------------------------------------------
     # Public API

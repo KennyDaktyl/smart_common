@@ -8,11 +8,17 @@ from smart_common.providers.enums import ProviderVendor
 from smart_common.providers.wizard.base import WizardStep, WizardStepResult
 from smart_common.providers.wizard.exceptions import WizardSessionStateError
 from smart_common.providers.schemas.wizard.huawei import (
-    HuaweiAuthStep as HuaweiAuthStepSchema,
-    HuaweiDeviceStep as HuaweiDeviceStepSchema,
-    HuaweiStationStep as HuaweiStationStepSchema,
+    HuaweiAuthForm,
+    HuaweiStationForm,
+    HuaweiDeviceSelectForm,
+    HuaweiDetailsForm,
+    HuaweiDetailsSummary,
 )
 
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
 
 def _resolve_adapter(session_data: Mapping[str, Any]) -> HuaweiProviderAdapter:
     credentials = session_data.get("credentials")
@@ -33,13 +39,17 @@ def _resolve_adapter(session_data: Mapping[str, Any]) -> HuaweiProviderAdapter:
     )
 
 
+# ------------------------------------------------------------
+# Step: AUTH
+# ------------------------------------------------------------
+
 class HuaweiAuthWizardStep(WizardStep):
     name = "auth"
-    schema = HuaweiAuthStepSchema
+    schema = HuaweiAuthForm
 
     def process(
         self,
-        payload: HuaweiAuthStepSchema,
+        payload: HuaweiAuthForm,
         session_data: Mapping[str, Any],
     ) -> WizardStepResult:
         adapter = get_vendor_adapter_factory().create(
@@ -51,8 +61,8 @@ class HuaweiAuthWizardStep(WizardStep):
         stations = adapter.list_stations()
         options = {
             "stations": [
-                {"value": station["station_code"], "label": station["name"]}
-                for station in stations
+                {"value": s["station_code"], "label": s["name"]}
+                for s in stations
             ]
         }
 
@@ -68,16 +78,27 @@ class HuaweiAuthWizardStep(WizardStep):
         )
 
 
+# ------------------------------------------------------------
+# Step: STATION
+# ------------------------------------------------------------
+
 class HuaweiStationWizardStep(WizardStep):
     name = "station"
-    schema = HuaweiStationStepSchema
+    schema = HuaweiStationForm
 
-    def process(self, payload, session_data):
+    def process(
+        self,
+        payload: HuaweiStationForm,
+        session_data: Mapping[str, Any],
+    ) -> WizardStepResult:
         adapter = _resolve_adapter(session_data)
         devices = adapter.list_devices(payload.station_code)
 
         options = {
-            "devices": [{"value": d["device_id"], "label": d["name"]} for d in devices]
+            "devices": [
+                {"value": d["device_id"], "label": d["name"]}
+                for d in devices
+            ]
         }
 
         return WizardStepResult(
@@ -85,43 +106,84 @@ class HuaweiStationWizardStep(WizardStep):
             options=options,
             session_updates={
                 "station_code": payload.station_code,
-                "devices": {d["device_id"]: d for d in devices},  # 🔥
+                "devices": {d["device_id"]: d for d in devices},
             },
-            context_updates={"station_code": payload.station_code},
+            context_updates={
+                "station_code": payload.station_code,
+            },
         )
 
 
+# ------------------------------------------------------------
+# Step: DEVICE (select + summary)
+# ------------------------------------------------------------
+
 class HuaweiDeviceWizardStep(WizardStep):
     name = "device"
-    schema = HuaweiDeviceStepSchema
+    schema = HuaweiDeviceSelectForm
 
-    def process(self, payload, session_data):
-        devices: dict = session_data.get("devices", {})
+    def process(
+        self,
+        payload: HuaweiDeviceSelectForm,
+        session_data: Mapping[str, Any],
+    ) -> WizardStepResult:
+        devices: dict[int, dict] = session_data.get("devices", {})
         device = devices.get(payload.device_id)
 
         if not device:
-            raise WizardSessionStateError("Selected Huawei device not found in session")
+            raise WizardSessionStateError("Selected Huawei device not found")
 
         station_code = session_data.get("station_code")
         if not station_code:
-            raise WizardSessionStateError("Missing station_code")
+            raise WizardSessionStateError("Missing station_code in session")
+
+        details = HuaweiDetailsSummary(
+            station_code=station_code,
+            inverter_id=device["device_id"],
+            name=device.get("name"),
+            model=device.get("model"),
+            inv_type=device.get("inv_type"),
+            latitude=device.get("latitude"),
+            longitude=device.get("longitude"),
+            software_version=device.get("software_version"),
+            optimizer_count=device.get("optimizer_count"),
+        ).model_dump()
+
+        return WizardStepResult(
+            next_step="details",
+            options=details,
+            session_updates={
+                "details": details,
+            },
+            context_updates={
+                "station_code": station_code,
+            },
+        )
+
+
+# ------------------------------------------------------------
+# Step: DETAILS (editable form)
+# ------------------------------------------------------------
+
+class HuaweiDetailsWizardStep(WizardStep):
+    name = "details"
+    schema = HuaweiDetailsForm
+
+    def process(
+        self,
+        payload: HuaweiDetailsForm,
+        session_data: Mapping[str, Any],
+    ) -> WizardStepResult:
+        details = session_data.get("details")
+        if not details:
+            raise WizardSessionStateError("Missing Huawei details in wizard session")
 
         final_config = {
-            "station_code": station_code,
-            "inverter_id": device["device_id"],
-            "name": device["name"],
-            "model": device.get("model"),
-            "inv_type": device.get("inv_type"),
-            "latitude": device.get("latitude"),
-            "longitude": device.get("longitude"),
-            "software_version": device.get("software_version"),
-            "optimizer_count": device.get("optimizer_count"),
-            "max_power_kw": 10.0,
-            "min_power_kw": 0.0,
+            **details,
+            **payload.model_dump(),
         }
 
         return WizardStepResult(
             is_complete=True,
             final_config=final_config,
-            session_updates={"device_id": device["device_id"]},
         )

@@ -12,6 +12,7 @@ from smart_common.providers.provider_config.goodwe import (
     GoodWeProviderConfig,
     goodwe_integration_settings,
 )
+from smart_common.providers.schemas.wizard.goodwe import GoodWeAuthStep
 from smart_common.providers.wizard.goodwe.wizard import GoodWeWizard
 
 
@@ -24,6 +25,7 @@ ProviderDefinitionRegistry.register(
         default_unit=PowerUnit.WATT,
         requires_wizard=True,
         config_schema=GoodWeProviderConfig,
+        credentials_schema=GoodWeAuthStep,
         adapter_cls=GoodWeProviderAdapter,
         adapter_settings={
             "timeout": goodwe_integration_settings.GOODWE_TIMEOUT,

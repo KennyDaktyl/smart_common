@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
+from smart_common.enums.unit import PowerUnit
+from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.exceptions import ProviderError, ProviderFetchError
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
@@ -247,7 +249,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         payload = {"devTypeId": "1", "devIds": device_id}
         logger.info(
             "Huawei → get production",
-            extra={payload},
+            extra={"payload": payload},
         )
 
         result = self._post("getDevRealKpi", payload)
@@ -260,6 +262,72 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             },
         )
         return result.get("data", [])
+
+    def get_current_power(self, device_id: str) -> float:
+        payload = self.get_production(device_id)
+        data = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(data, Mapping):
+            raise ProviderError(
+                message="Huawei getDevRealKpi returned unexpected payload",
+                details={"payload": payload},
+            )
+
+        power_value = self._extract_power_value(data)
+        if power_value is None:
+            raise ProviderError(
+                message="Huawei getDevRealKpi missing power value",
+                details={"payload": payload},
+            )
+
+        return power_value
+
+    def _extract_power_value(self, payload: Mapping[str, Any]) -> float | None:
+        candidates = []
+        data_item_map = payload.get("dataItemMap")
+        if isinstance(data_item_map, Mapping):
+            candidates.extend(
+                (
+                    data_item_map.get(key)
+                    for key in (
+                        "active_power",
+                        "mppt_power",
+                        "activePower",
+                        "ppvPower",
+                        "total_power",
+                        "totalPower",
+                        "realPower",
+                        "pvtric",
+                    )
+                )
+            )
+
+        candidates.extend(
+            (
+                payload.get(key)
+                for key in (
+                    "active_power",
+                    "mppt_power",
+                    "activePower",
+                    "total_power",
+                    "totalPower",
+                    "realPower",
+                    "power",
+                    "pv",
+                    "currentPower",
+                    "powerFactor",
+                )
+            )
+        )
+
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            try:
+                return float(candidate)
+            except (TypeError, ValueError):
+                continue
+
+        return None
 
     # ------------------------------------------------------------------
     # Normalization
@@ -288,3 +356,22 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             "software_version": raw.get("softwareVersion"),
             "raw": dict(raw),
         }
+
+    def fetch_measurement(self) -> NormalizedMeasurement:
+        device_id = getattr(self, "provider_external_id", None)
+        if not device_id:
+            raise ProviderError(
+                message="Huawei adapter missing device identifier",
+                details={"vendor": self.vendor.value},
+            )
+
+        value = self.get_current_power(device_id)
+        measured_at = datetime.now(timezone.utc)
+
+        return NormalizedMeasurement(
+            provider_id=getattr(self, "provider_id", 0),
+            value=value,
+            unit=PowerUnit.WATT.value,
+            measured_at=measured_at,
+            metadata={"device_id": device_id},
+        )

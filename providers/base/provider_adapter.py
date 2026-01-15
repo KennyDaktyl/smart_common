@@ -5,7 +5,7 @@ from typing import Any, Mapping
 
 from smart_common.providers.base.adapter import BaseHttpAdapter
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
-from smart_common.providers.models import NormalizedMeasurement
+from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 
 
 class BaseProviderAdapter(BaseHttpAdapter, ABC):

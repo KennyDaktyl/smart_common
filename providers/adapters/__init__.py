@@ -7,6 +7,7 @@ from smart_common.providers.adapters.base import (
 from smart_common.providers.adapters.factory import (
     VendorAdapterFactory,
     get_vendor_adapter_factory,
+    create_adapter_for_provider,
 )
 from smart_common.providers.adapters.goodwe import GoodWeProviderAdapter
 from smart_common.providers.adapters.huawei import HuaweiProviderAdapter
@@ -18,4 +19,5 @@ __all__ = [
     "GoodWeProviderAdapter",
     "VendorAdapterFactory",
     "get_vendor_adapter_factory",
+    "create_adapter_for_provider",
 ]

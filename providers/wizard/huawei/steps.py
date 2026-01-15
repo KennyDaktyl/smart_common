@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from smart_common.providers.adapters.factory import get_vendor_adapter_factory
 from smart_common.providers.adapters.huawei import HuaweiProviderAdapter
 from smart_common.providers.enums import ProviderVendor
 from smart_common.providers.wizard.base import WizardStep, WizardStepResult
@@ -31,6 +30,8 @@ def _resolve_adapter(session_data: Mapping[str, Any]) -> HuaweiProviderAdapter:
 
     overrides = session_data.get("adapter_overrides") or {}
 
+    from smart_common.providers.adapters.factory import get_vendor_adapter_factory
+
     return get_vendor_adapter_factory().create(
         ProviderVendor.HUAWEI,
         credentials=credentials,
@@ -52,6 +53,8 @@ class HuaweiAuthWizardStep(WizardStep):
         payload: HuaweiAuthForm,
         session_data: Mapping[str, Any],
     ) -> WizardStepResult:
+        from smart_common.providers.adapters.factory import get_vendor_adapter_factory
+
         adapter = get_vendor_adapter_factory().create(
             ProviderVendor.HUAWEI,
             credentials={"username": payload.username, "password": payload.password},

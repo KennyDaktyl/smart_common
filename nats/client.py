@@ -6,6 +6,8 @@ import logging
 import nats
 from nats.js import JetStreamContext
 
+from smart_common.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +41,15 @@ class NATSClient:
         async def error_cb(e):
             logger.error(f"[NATS] Error: {e}")
 
-        servers = servers or ["nats://localhost:4222"]
+        if servers is None:
+            raw_servers = settings.NATS_URL
+            servers = [
+                server.strip()
+                for server in raw_servers.split(",")
+                if server.strip()
+            ]
+            if not servers:
+                servers = ["nats://localhost:4222"]
 
         max_reconnect_attempts = (
             max_reconnect_attempts

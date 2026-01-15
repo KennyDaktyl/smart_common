@@ -4,10 +4,15 @@ import logging
 from inspect import Parameter, signature
 from typing import Any, Mapping, Tuple
 
+from cryptography.fernet import InvalidToken
+
+from smart_common.core.security import decrypt_secret
+from smart_common.models.provider import Provider
 from smart_common.providers.adapters.base import BaseProviderAdapter
+from smart_common.providers.definitions import registry as _  # ensure definitions register
 from smart_common.providers.definitions.base import ProviderDefinition, ProviderDefinitionRegistry
 from smart_common.providers.enums import ProviderVendor
-from smart_common.providers.exceptions import ProviderNotSupportedError
+from smart_common.providers.exceptions import ProviderConfigError, ProviderNotSupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -116,3 +121,86 @@ class VendorAdapterFactory:
 def get_vendor_adapter_factory() -> VendorAdapterFactory:
     definitions = ProviderDefinitionRegistry.all()
     return VendorAdapterFactory(definitions)
+
+
+def create_adapter_for_provider(
+    provider: Provider,
+    *,
+    factory: VendorAdapterFactory | None = None,
+) -> BaseProviderAdapter:
+    vendor = provider.vendor
+    if vendor is None:
+        raise ProviderConfigError(
+            "Provider vendor missing",
+            details={"provider_id": provider.id},
+        )
+
+    connect_credentials = _resolve_provider_credentials(provider)
+    if not connect_credentials:
+        raise ProviderConfigError(
+            "Provider credentials are missing",
+            details={"provider_id": provider.id, "vendor": vendor.value},
+        )
+
+    external_id = provider.external_id
+    if not external_id:
+        raise ProviderConfigError(
+            "Provider external_id is required for polling",
+            details={"provider_id": provider.id, "vendor": vendor.value},
+        )
+
+    factory = factory or get_vendor_adapter_factory()
+
+    cache_key = f"{vendor.value}:{external_id}"
+    adapter = factory.create(
+        vendor,
+        credentials=connect_credentials,
+        cache_key=cache_key,
+    )
+
+    # keep runtime metadata on the adapter to avoid re-fetching
+    setattr(adapter, "provider_external_id", external_id)
+    setattr(adapter, "provider_id", provider.id)
+
+    return adapter
+
+
+def _resolve_provider_credentials(provider: Provider) -> dict[str, str]:
+    credentials = getattr(provider, "credentials", None)
+    if credentials is None:
+        return {}
+
+    payload: dict[str, str] = {}
+
+    attr_mapping = {
+        "login": ("username",),
+        "password": ("password",),
+        "token": ("token",),
+        "refresh_token": ("refresh_token",),
+    }
+
+    for attr, target_keys in attr_mapping.items():
+        raw_value = getattr(credentials, attr, None)
+        if raw_value is None:
+            continue
+
+        try:
+            decrypted = _decrypt_secret(raw_value)
+        except InvalidToken as exc:
+            raise ProviderConfigError(
+                "Failed to decrypt provider credential",
+                details={
+                    "provider_id": provider.id,
+                    "vendor": provider.vendor.value if provider.vendor else None,
+                    "attribute": attr,
+                },
+            ) from exc
+
+        for key in target_keys:
+            payload[key] = decrypted
+
+    return payload
+
+
+def _decrypt_secret(value: str) -> str:
+    return decrypt_secret(value)

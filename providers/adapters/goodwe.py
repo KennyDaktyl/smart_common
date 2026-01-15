@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from smart_common.enums.unit import PowerUnit
+from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.providers.exceptions import ProviderError, ProviderFetchError
@@ -175,6 +178,25 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
         power = power_str.replace("W", "0")
         return float(power)
+
+    def fetch_measurement(self) -> NormalizedMeasurement:
+        powerstation_id = getattr(self, "provider_external_id", None)
+        if not powerstation_id:
+            raise ProviderError(
+                message="GoodWe adapter missing powerstation identifier",
+                details={"vendor": self.vendor.value},
+            )
+
+        value = self.get_current_power(powerstation_id)
+        measured_at = datetime.now(timezone.utc)
+
+        return NormalizedMeasurement(
+            provider_id=getattr(self, "provider_id", 0),
+            value=value,
+            unit=PowerUnit.WATT.value,
+            measured_at=measured_at,
+            metadata={"powerstation_id": powerstation_id},
+        )
 
     # ------------------------------------------------------------------
     # REQUIRED BY BASE

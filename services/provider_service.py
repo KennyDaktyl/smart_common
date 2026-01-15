@@ -414,8 +414,8 @@ class ProviderService:
 
         request_payload = dict(payload)
         request_payload["vendor"] = vendor
-        request_payload["config"] = config
-        if credentials:
+        request_payload["config"] = config or {}
+        if credentials is not None:
             request_payload["credentials"] = credentials
 
         return self.create_for_user(db, user_id, request_payload)

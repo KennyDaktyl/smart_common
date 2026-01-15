@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy.orm import joinedload
+
 from smart_common.models.provider import Provider
 from smart_common.providers.enums import ProviderVendor
 from smart_common.repositories.base import BaseRepository
@@ -13,6 +15,14 @@ class ProviderRepository(BaseRepository[Provider]):
 
     def list_for_user(self, user_id: int) -> list[Provider]:
         return self.list(filters={"user_id": user_id})
+
+    def get_active_providers(self) -> list[Provider]:
+        query = (
+            self.session.query(self.model)
+            .filter(self.model.enabled.is_(True))
+            .options(joinedload(self.model.credentials))
+        )
+        return query.all()
 
     def get_for_user(self, provider_id: int, user_id: int) -> Optional[Provider]:
         return (

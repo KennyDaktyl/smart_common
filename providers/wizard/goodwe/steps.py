@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from smart_common.providers.adapters.factory import get_vendor_adapter_factory
 from smart_common.providers.enums import ProviderVendor
 from smart_common.providers.schemas.wizard.goodwe import (
     GoodWeAuthStep,
@@ -25,6 +24,8 @@ class GoodWeAuthWizardStep(WizardStep):
         session_data: Mapping[str, Any],
     ) -> WizardStepResult:
         credentials = payload.model_dump()
+        from smart_common.providers.adapters.factory import get_vendor_adapter_factory
+
         adapter = get_vendor_adapter_factory().create(
             ProviderVendor.GOODWE,
             credentials=credentials,
@@ -59,6 +60,7 @@ class GoodWePowerStationWizardStep(WizardStep):
 
         credentials = session_data["credentials"]
         powerstation_id = payload.powerstation_id
+        from smart_common.providers.adapters.factory import get_vendor_adapter_factory
 
         adapter = get_vendor_adapter_factory().create(
             ProviderVendor.GOODWE,
@@ -126,7 +128,12 @@ class GoodWeDetailsWizardStep(WizardStep):
             **form_data,
         }
 
+        credentials = session_data.get("credentials")
+        if not credentials:
+            raise WizardSessionStateError("GoodWe credentials missing after auth")
+
         return WizardStepResult(
             is_complete=True,
             final_config=final_config,
+            session_updates={"credentials": credentials},
         )

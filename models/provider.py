@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from smart_common.core.db import Base
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.enums.unit import PowerUnit
+from smart_common.models.normalized_measurement import NormalizedMeasurement  # noqa: F401
 
 
 class Provider(Base):
@@ -126,6 +127,12 @@ class Provider(Base):
         "ProviderCredential",
         back_populates="provider",
         uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    measurements = relationship(
+        "ProviderMeasurement",
+        back_populates="provider",
         cascade="all, delete-orphan",
     )
 

@@ -4,6 +4,7 @@ from .device_event import DeviceEventRepository
 from .device_schedule import DeviceScheduleRepository
 from .microcontroller import MicrocontrollerRepository
 from .provider import ProviderRepository
+from .measurement_repository import MeasurementRepository
 from .user import UserRepository
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "ProviderRepository",
     "MicrocontrollerRepository",
     "UserRepository",
+    "MeasurementRepository",
 ]

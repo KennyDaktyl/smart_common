@@ -10,3 +10,5 @@ from smart_common.models.microcontroller_sensor_capability import (  # noqa: F40
 )
 from smart_common.models.user import User  # noqa: F401
 from smart_common.models.user_profile import UserProfile  # noqa: F401
+from smart_common.models.provider_measurement import ProviderMeasurement  # noqa: F401
+from smart_common.models.normalized_measurement import NormalizedMeasurement  # noqa: F401

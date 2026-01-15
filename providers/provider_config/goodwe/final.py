@@ -31,12 +31,13 @@ class GoodWeProviderConfig(APIModel):
         None,
         description="Currency used by GoodWe statistics",
     )
-    inverter_sn: str | None = Field(
-        None,
-        description="Inverter serial number (optional)",
-    )
-    max_power_kw: float = Field(
-        default=20.0,
+    max_power_w: float = Field(
+        default=10000.0,
         gt=0,
-        description="Maximum inverter power in kW",
+        description="Maximum inverter power in W",
+    )
+    min_power_w: float = Field(
+        default=0.0,
+        ge=0,
+        description="Minimum inverter power in W",
     )

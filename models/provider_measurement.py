@@ -31,7 +31,8 @@ class ProviderMeasurement(Base):
         String(length=16),
         nullable=True,
     )
-    metadata: Mapped[dict[str, Any]] = mapped_column(
+    metadata_payload: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
         JSON,
         nullable=False,
         default=dict,

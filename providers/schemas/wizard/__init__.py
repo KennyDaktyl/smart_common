@@ -6,15 +6,19 @@ from smart_common.providers.schemas.wizard.goodwe import (
     GoodWeDetailsSummary,
 )
 from smart_common.providers.schemas.wizard.huawei import (
-    HuaweiAuthStep,
-    HuaweiDeviceStep,
-    HuaweiStationStep,
+    HuaweiAuthForm,
+    HuaweiStationForm,
+    HuaweiDeviceSelectForm,
+    HuaweiDetailsForm,
+    HuaweiDetailsSummary,
 )
 
 __all__ = [
-    "HuaweiAuthStep",
-    "HuaweiStationStep",
-    "HuaweiDeviceStep",
+    "HuaweiAuthForm",
+    "HuaweiStationForm",
+    "HuaweiDeviceSelectForm",
+    "HuaweiDetailsForm",
+    "HuaweiDetailsSummary",
     "GoodWeAuthStep",
     "GoodWePowerStationStep",
     "GoodWeDetailsSummary",

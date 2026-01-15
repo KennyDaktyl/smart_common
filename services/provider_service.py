@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from smart_common.models.microcontroller import Microcontroller
 from smart_common.models.provider import Provider, ProviderCredential
 from smart_common.providers.enums import ProviderType, ProviderVendor
+from smart_common.enums.unit import PowerUnit
 
 # ---- provider config schemas ----
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
@@ -195,6 +196,58 @@ class ProviderService:
                 )
 
             return self._validate_external_id(external_id)
+        if vendor == ProviderVendor.GOODWE:
+            external_id = config.get("powerstation_id")
+
+            if not external_id:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="GoodWe provider requires powerstation_id in config",
+                )
+
+            return self._validate_external_id(external_id)
+
+    def _coerce_power_value(self, raw_value) -> float | None:
+        if raw_value is None:
+            return None
+        try:
+            return float(raw_value)
+        except (TypeError, ValueError):
+            return None
+
+    def _derive_power_bound(
+        self,
+        config: dict,
+        definition: ProviderDefinition,
+        bound: str,
+    ) -> float | None:
+        unit = definition.default_unit
+        if not unit:
+            return None
+
+        key_w = f"{bound}_power_w"
+        key_kw = f"{bound}_power_kw"
+
+        if unit == PowerUnit.WATT:
+            value = self._coerce_power_value(config.get(key_w))
+            if value is not None:
+                return value
+
+            value = self._coerce_power_value(config.get(key_kw))
+            if value is not None:
+                return value * 1000.0
+            return None
+
+        if unit == PowerUnit.KILOWATT:
+            value = self._coerce_power_value(config.get(key_kw))
+            if value is not None:
+                return value
+
+            value = self._coerce_power_value(config.get(key_w))
+            if value is not None:
+                return value / 1000.0
+
+        return None
 
     def _ensure_unique_provider(
         self,
@@ -586,8 +639,25 @@ class ProviderService:
         external_id = self._derive_external_id(vendor, payload, config)
         self._ensure_unique_provider(db, user_id, vendor, external_id)
 
-        value_min = payload.get("value_min", definition.default_value_min)
-        value_max = payload.get("value_max", definition.default_value_max)
+        validated_config = self._validate_config(definition, config)
+
+        payload["config"] = validated_config
+
+        value_min = payload.get("value_min")
+        value_max = payload.get("value_max")
+
+        if value_min is None:
+            value_min = self._derive_power_bound(validated_config, definition, "min")
+        if value_max is None:
+            value_max = self._derive_power_bound(validated_config, definition, "max")
+
+        if value_min is None:
+            value_min = definition.default_value_min
+        if value_max is None:
+            value_max = definition.default_value_max
+
+        payload["value_min"] = value_min
+        payload["value_max"] = value_max
 
         if value_min is None or value_max is None:
             raise HTTPException(
@@ -603,13 +673,12 @@ class ProviderService:
 
         payload["vendor"] = vendor
         payload["provider_type"] = definition.provider_type
-        payload["config"] = self._validate_config(definition, config)
         payload["user_id"] = user_id
         payload["microcontroller_id"] = microcontroller_id
         payload["external_id"] = external_id
         payload["enabled"] = False
-        payload["default_expected_interval_sec"] = definition.default_expected_interval_sec
-        
+        payload["expected_interval_sec"] = definition.default_expected_interval_sec
+
         if not payload.get("unit"):
             payload["unit"] = definition.default_unit
 

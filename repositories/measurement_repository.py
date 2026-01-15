@@ -31,7 +31,7 @@ class MeasurementRepository:
             measured_at=measurement.measured_at,
             measured_value=measurement.value,
             measured_unit=measurement.unit,
-            metadata=dict(measurement.metadata or {}),
+            metadata_payload=dict(measurement.metadata or {}),
         )
         self.session.add(entry)
         self.session.flush()

@@ -12,6 +12,7 @@ from smart_common.providers.schemas.wizard.goodwe import (
 )
 from smart_common.providers.wizard.base import WizardStep, WizardStepResult
 from smart_common.providers.wizard.exceptions import WizardSessionStateError
+from smart_common.providers.exceptions import ProviderError
 
 
 class GoodWeAuthWizardStep(WizardStep):
@@ -67,7 +68,18 @@ class GoodWePowerStationWizardStep(WizardStep):
 
         raw = adapter.get_powerstation_detail(powerstation_id)
 
-        data = raw.get("data", {})
+        if not isinstance(raw, Mapping):
+            raise ProviderError(
+                "Invalid GoodWe powerstation detail payload",
+                details={"response": raw},
+            )
+
+        data = raw.get("data")
+        if not isinstance(data, Mapping):
+            raise ProviderError(
+                "GoodWe powerstation detail is empty",
+                details={"response": raw},
+            )
         info: dict[str, Any] = data.get("info", {})
         kpi: dict[str, Any] = data.get("kpi", {})
 
@@ -107,9 +119,11 @@ class GoodWeDetailsWizardStep(WizardStep):
         if not details:
             raise WizardSessionStateError("Missing GoodWe details")
 
+        form_data = payload.model_dump()
+
         final_config = {
             **details,
-            **payload.model_dump(),
+            **form_data,
         }
 
         return WizardStepResult(

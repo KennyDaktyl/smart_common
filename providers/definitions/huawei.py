@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from smart_common.enums.unit import PowerUnit
 from smart_common.providers.adapters.huawei import HuaweiProviderAdapter
-from smart_common.providers.definitions.base import ProviderDefinition, ProviderDefinitionRegistry
+from smart_common.providers.definitions.base import (
+    ProviderDefinition,
+    ProviderDefinitionRegistry,
+)
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.providers.provider_config.config import provider_settings
-from smart_common.providers.provider_config.credentials import UsernamePasswordCredentials
+from smart_common.providers.provider_config.credentials import (
+    UsernamePasswordCredentials,
+)
 from smart_common.providers.provider_config.huawei.final import HuaweiProviderConfig
 from smart_common.providers.wizard.huawei.wizard import HuaweiWizard
 
@@ -27,10 +32,8 @@ ProviderDefinitionRegistry.register(
             "max_retries": provider_settings.HUAWEI_MAX_RETRIES,
         },
         wizard_cls=HuaweiWizard,
-        default_unit=PowerUnit.KILOWATT,
         default_value_min=0.0,
         default_value_max=10.0,
         default_expected_interval_sec=180,
-
     )
 )

@@ -30,10 +30,8 @@ ProviderDefinitionRegistry.register(
             "max_retries": goodwe_integration_settings.GOODWE_MAX_RETRIES,
         },
         wizard_cls=GoodWeWizard,
-        default_unit=PowerUnit.WATT,
         default_value_min=0.0,
         default_value_max=20000.0,
         default_expected_interval_sec=120,
-
     )
 )

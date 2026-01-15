@@ -1,6 +1,6 @@
 """Add provider measurements table to track value changes.
 
-Revision ID: 6b7d8c9e0f1a
+Revision ID: 3963df7a259d
 Revises: 4c0081a4b9e2
 Create Date: 2026-01-01 00:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "6b7d8c9e0f1a"
+revision: str = "3963df7a259d"
 down_revision: Union[str, Sequence[str], None] = "4c0081a4b9e2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

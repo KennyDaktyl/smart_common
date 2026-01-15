@@ -14,10 +14,8 @@ from smart_common.providers.wizard.exceptions import (
     WizardStepNotFoundError,
 )
 from smart_common.providers.wizard.factory import ProviderWizardFactory
-from smart_common.providers.wizard.session import (
-    DEFAULT_WIZARD_SESSION_STORE,
-)
 from smart_common.providers.wizard.session.base import BaseWizardSessionStore
+from smart_common.providers.wizard.session.provider import get_wizard_session_store
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +28,7 @@ class WizardService:
     ) -> None:
         self._definitions = definitions or ProviderDefinitionRegistry.all()
         self._wizard_factory = ProviderWizardFactory(self._definitions)
-        self._session_store = session_store
+        self._session_store = session_store or get_wizard_session_store()
 
     # ------------------------------------------------------------------
     # Public API
@@ -184,9 +182,9 @@ class WizardService:
         return {
             "vendor": vendor,
             "step": next_step,
-            "schema": next_schema.model_json_schema()
-            if next_schema is not None
-            else None,
+            "schema": (
+                next_schema.model_json_schema() if next_schema is not None else None
+            ),
             "options": dict(result.options),
             "context": dict(session.context),
             "is_complete": False,
@@ -247,7 +245,6 @@ class WizardService:
             config = session.session_data.setdefault("config", {})
             config.update(payload_values)
 
-        # 🔥 KLUCZ: commit final_config
         if result.final_config:
             session.session_data["config"] = dict(result.final_config)
             logger.info(

@@ -43,3 +43,30 @@ class AdvancedRotatingFileHandler(TimedRotatingFileHandler):
 
         self.stream = self._open()
         self._cleanup_old_logs()
+
+    def _cleanup_old_logs(self):
+        """Prune log files older than the configured retention period."""
+        if self.retention_days <= 0:
+            return
+
+        cutoff = datetime.now() - timedelta(days=self.retention_days)
+        for root, _, files in os.walk(self.base_log_dir):
+            for filename in files:
+                file_path = os.path.join(root, filename)
+                if file_path == self.baseFilename:
+                    continue
+
+                try:
+                    modification_time = datetime.fromtimestamp(
+                        os.path.getmtime(file_path)
+                    )
+                except OSError:
+                    continue
+
+                if modification_time >= cutoff:
+                    continue
+
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    continue

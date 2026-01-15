@@ -86,32 +86,10 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
         return unique_ids
 
-    # def get_powerstation_detail(self, powerstation_id: str) -> dict[str, Any]:
-    #     if not self._token_ctx:
-    #         raise ProviderError("GoodWe adapter not authenticated")
-
-    #     response = self._post(
-    #         "/api/v3/PowerStation/GetPlantDetailByPowerstationId",
-    #         payload={
-    #             "PowerStationId": powerstation_id,
-    #             "uid": self._token_ctx["uid"],
-    #         },
-    #     )
-
-    #     logger.info("GoodWe plant detail response: %s", response)
-
-    #     if not isinstance(response, dict):
-    #         raise ProviderError(
-    #             message="Invalid plant detail payload from GoodWe",
-    #             details={"response": response},
-    #         )
-
-    #     return response
     def get_powerstation_detail(self, powerstation_id: str) -> dict[str, Any]:
         if not self._token_ctx:
-            raise ProviderError("GoodWe adapter not authenticated")
+            raise ProviderError(message="GoodWe adapter not authenticated")
 
-        # 🔥 HARD TEST – 1:1 jak Postman
         headers = {
             "Content-Type": "application/json",
             "Token": json.dumps(
@@ -125,13 +103,12 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
                 },
                 separators=(",", ":"),
             ),
-            # 🔥 browser-like context (KLUCZOWE)
             "User-Agent": "PostmanRuntime/7.51.0",
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-        payload = {"PowerStationId": "1f44a33c-ea50-434b-9109-c051f6be7897"}
+        payload = {"PowerStationId": powerstation_id}
         import requests
 
         response = requests.post(
@@ -156,21 +133,47 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
         return data
 
-    def get_current_power(self, device_id: str | None = None) -> float:
+    def get_current_power(self, power_station_id: str) -> float:
         """
         Current power in **W**
         """
-        powerstation_id = self.get_powerstation_id()
+
+        if not self._token_ctx:
+            self._authenticate()
+
+        headers = {
+            "Content-Type": "application/json",
+            "Token": json.dumps(
+                {
+                    "uid": self._token_ctx["uid"],
+                    "timestamp": self._token_ctx["timestamp"],
+                    "token": self._token_ctx["token"],
+                    "client": "web",
+                    "version": "v2.1.0",
+                    "language": "zh_CN",
+                },
+                separators=(",", ":"),
+            ),
+            "User-Agent": "PostmanRuntime/7.51.0",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
 
         data = self._post(
             "/api/v2/PowerStation/GetPowerflow",
-            payload={"uid": powerstation_id},
+            headers=headers,
+            payload={"PowerStationId": power_station_id},
         )
 
-        power = data.get("power")
-        if power is None:
-            raise ProviderError("Missing power value in GoodWe GetPowerflow")
+        powerflow = data.get("powerflow")
+        if not powerflow:
+            raise ProviderError(message="Missing powerflow data in GoodWe GetPowerflow")
 
+        power_str = powerflow.get("pv")
+        if power_str is None:
+            raise ProviderError(message="Missing power value in GoodWe GetPowerflow")
+
+        power = power_str.replace("W", "0")
         return float(power)
 
     # ------------------------------------------------------------------
@@ -187,7 +190,6 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         ]
 
     def list_devices(self, station_code: str) -> list[Mapping[str, Any]]:
-        # GoodWe = 1 logical device per plant
         return [
             {
                 "device_id": station_code,
@@ -265,14 +267,16 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             ) from exc
 
         if payload.get("code") != 0:
-            raise ProviderError(payload.get("msg", "GoodWe login failed"))
+            raise ProviderError(
+                message=payload.get("msg", "GoodWe login failed"),
+                details={"response": payload},
+            )
 
         data = payload["data"]
 
-        # 🔥 SEMS returns correct API host
         api_base = payload.get("api")
         if not api_base:
-            raise ProviderError("Missing API base URL from GoodWe")
+            raise ProviderError(message="Missing API base URL from GoodWe")
 
         self.base_url = api_base.rstrip("/")
 
@@ -290,7 +294,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
     def _token_header(self) -> str:
         if not self._token_ctx:
-            raise ProviderError("GoodWe adapter not authenticated")
+            raise ProviderError(message="GoodWe adapter not authenticated")
         return json.dumps(self._token_ctx, separators=(",", ":"))
 
     def _post(self, path: str, payload: Mapping[str, Any]) -> Any:
@@ -317,7 +321,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             data = response.json()
         except ValueError as exc:
             raise ProviderFetchError(
-                "Invalid JSON from GoodWe API",
+                message="Invalid JSON from GoodWe API",
                 details={"body": response.text},
             ) from exc
 

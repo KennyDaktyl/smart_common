@@ -21,7 +21,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from smart_common.core.db import Base
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.enums.unit import PowerUnit
-from smart_common.models.normalized_measurement import NormalizedMeasurement  # noqa: F401
+from smart_common.models.normalized_measurement import (
+    NormalizedMeasurement,
+)  # noqa: F401
 
 
 class Provider(Base):
@@ -114,9 +116,11 @@ class Provider(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    last_seen_at: datetime | None
-    last_value: float | None
-    
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     microcontroller = relationship(
         "Microcontroller",
         back_populates="sensor_providers",
@@ -135,6 +139,10 @@ class Provider(Base):
         back_populates="provider",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def default_expected_interval_sec(self) -> int | None:
+        return self.expected_interval_sec
 
 
 class ProviderCredential(Base):

@@ -1,3 +1,4 @@
+# smart_common/models/provider.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from smart_common.core.db import Base
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
 from smart_common.enums.unit import PowerUnit
-from smart_common.models.normalized_measurement import (
+from smart_common.schemas.normalized_measurement import (
     NormalizedMeasurement,
 )  # noqa: F401
 
@@ -89,11 +90,6 @@ class Provider(Base):
     value_min: Mapped[float | None] = mapped_column(Numeric(12, 4))
     value_max: Mapped[float | None] = mapped_column(Numeric(12, 4))
 
-    # ---------- runtime state ----------
-    last_value: Mapped[float | None] = mapped_column(Numeric(12, 4))
-    last_measurement_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
     expected_interval_sec: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,

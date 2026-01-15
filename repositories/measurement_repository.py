@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_measurement import ProviderMeasurement
-from smart_common.models.normalized_measurement import NormalizedMeasurement
+from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 
 
 class MeasurementRepository:

@@ -12,6 +12,9 @@ from .models import NormalizedMeasurement
 
 ProviderAdapterFactory = VendorAdapterFactory
 
+
 def register_adapter(*args, **kwargs):
     """legacy – adapter registration now happens through provider definitions."""
-    raise NotImplementedError("register_adapter is deprecated; use provider definitions")
+    raise NotImplementedError(
+        "register_adapter is deprecated; use provider definitions"
+    )

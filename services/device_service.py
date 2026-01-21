@@ -9,13 +9,12 @@ from smart_common.core.db import transactional_session
 from smart_common.enums.device import DeviceMode
 from smart_common.enums.event import EventType
 from smart_common.enums.user import UserRole
-from smart_common.events.device_events import (
-    DeviceUpdatedPayload,
-)
+from smart_common.events.device_events import DeviceUpdatedPayload
 from smart_common.events.event_dispatcher import EventDispatcher
 from smart_common.models.device import Device
 from smart_common.models.microcontroller import Microcontroller
 from smart_common.nats.client import NATSClient
+from smart_common.nats.event_helpers import ack_subject_for_entity, subject_for_entity
 from smart_common.nats.publisher import NatsPublisher
 from smart_common.repositories.device import DeviceRepository
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
@@ -51,10 +50,10 @@ class DeviceService:
     # ---------------------------------------------------------------------
 
     def _subject_for_microcontroller(self, mc_uuid: UUID) -> str:
-        return f"device_communication.microcontroller.{mc_uuid}.events"
+        return subject_for_entity(mc_uuid)
 
     def _ack_subject(self, mc_uuid: UUID) -> str:
-        return f"{self._subject_for_microcontroller(mc_uuid)}.ack"
+        return ack_subject_for_entity(mc_uuid)
 
     # ---------------------------------------------------------------------
     # Guards
@@ -275,12 +274,14 @@ class DeviceService:
 
         try:
             await self.events.publish_event_and_wait_for_ack(
-                subject=subject,
-                ack_subject=ack_subject,
+                entity_type="microcontroller",
+                entity_id=str(microcontroller_uuid),
                 event_type=event_type,
-                payload=payload,
+                data=payload,
                 predicate=lambda p: p.get("device_id") == payload.device_id,
                 timeout=10.0,
+                subject=subject,
+                ack_subject=ack_subject,
             )
         except Exception as exc:
             raise HTTPException(

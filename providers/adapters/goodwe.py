@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from smart_common.enums.unit import PowerUnit
+from smart_common.providers.adapters.utils import _parse_watt
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
@@ -13,6 +15,8 @@ from smart_common.providers.exceptions import ProviderError, ProviderFetchError
 from smart_common.providers.provider_config.goodwe import goodwe_integration_settings
 
 logger = logging.getLogger(__name__)
+
+EXTRA_ENERGY_GRID_STATUS = -1
 
 
 class GoodWeProviderAdapter(BaseProviderAdapter):
@@ -22,269 +26,74 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
     SEMS_VER = "v2.1.0"
 
+    # ------------------------------------------------------------------
+    # INIT
+    # ------------------------------------------------------------------
+
     def __init__(self, username: str, password: str) -> None:
         super().__init__(
             base_url="https://www.semsportal.com",
             timeout=goodwe_integration_settings.GOODWE_TIMEOUT,
             max_retries=goodwe_integration_settings.GOODWE_MAX_RETRIES,
         )
+
         self.username = username
         self.password = password
 
-        self._logged_in: bool = False
+        self._login_base_url = "https://www.semsportal.com"
+        self._api_base_url: str | None = None
+
+        self._logged_in = False
         self._token_ctx: dict[str, Any] | None = None
-        self._powerstation_id: str | None = None
+
         self._external_id: str | None = None
         self._powerstation_ids: list[str] | None = None
 
     # ------------------------------------------------------------------
-    # PUBLIC API (used by wizard / services)
+    # AUTH
     # ------------------------------------------------------------------
 
     def authenticate(self) -> None:
-        """Public auth entrypoint"""
         self._authenticate()
-
-    def get_powerstation_id(self) -> str:
-        """
-        Step 1 domain method:
-        returns GoodWe PowerStationId for logged-in user
-        """
-        self._authenticate()
-
-        if self._external_id:
-            return self._external_id
-
-        station_ids = self.get_powerstation_ids()
-        if not station_ids:
-            raise ProviderError(
-                message="Missing PowerStation identifiers from GoodWe",
-            )
-
-        station_id = station_ids[0]
-        self._external_id = station_id
-        return station_id
-
-    def get_powerstation_ids(self) -> list[str]:
-        """Return all available PowerStation IDs for the user."""
-        if self._powerstation_ids is not None:
-            return self._powerstation_ids
-
-        response = self._post(
-            "/PowerStation/GetPowerStationIdByOwner",
-            payload={},
-        )
-
-        ids = self._collect_powerstation_ids(response)
-
-        if not ids:
-            raise ProviderError(
-                message="GoodWe returned no PowerStation identifiers",
-                details={"data": response},
-            )
-
-        unique_ids = list(dict.fromkeys(ids))
-        self._powerstation_ids = unique_ids
-        self._external_id = unique_ids[0]
-
-        return unique_ids
-
-    def get_powerstation_detail(self, powerstation_id: str) -> dict[str, Any]:
-        if not self._token_ctx:
-            raise ProviderError(message="GoodWe adapter not authenticated")
-
-        headers = {
-            "Content-Type": "application/json",
-            "Token": json.dumps(
-                {
-                    "uid": self._token_ctx["uid"],
-                    "timestamp": self._token_ctx["timestamp"],
-                    "token": self._token_ctx["token"],
-                    "client": "web",
-                    "version": "v2.1.0",
-                    "language": "zh_CN",
-                },
-                separators=(",", ":"),
-            ),
-            "User-Agent": "PostmanRuntime/7.51.0",
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-        payload = {"PowerStationId": powerstation_id}
-        import requests
-
-        response = requests.post(
-            "https://eu.semsportal.com/api/v3/PowerStation/GetPlantDetailByPowerstationId",
-            headers=headers,
-            json=payload,
-            timeout=10,
-        )
-
-        logger.info("GoodWe RAW status=%s", response.status_code)
-        logger.info("GoodWe RAW response=%s", response.text)
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        if not isinstance(data, dict):
-            raise ProviderError(
-                message="Invalid plant detail payload from GoodWe",
-                details={"response": data},
-            )
-
-        return data
-
-    def get_current_power(self, power_station_id: str) -> float:
-        """
-        Current power in **W**
-        """
-
-        if not self._token_ctx:
-            self._authenticate()
-
-        headers = {
-            "Content-Type": "application/json",
-            "Token": json.dumps(
-                {
-                    "uid": self._token_ctx["uid"],
-                    "timestamp": self._token_ctx["timestamp"],
-                    "token": self._token_ctx["token"],
-                    "client": "web",
-                    "version": "v2.1.0",
-                    "language": "zh_CN",
-                },
-                separators=(",", ":"),
-            ),
-            "User-Agent": "PostmanRuntime/7.51.0",
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-        data = self._post(
-            "/api/v2/PowerStation/GetPowerflow",
-            headers=headers,
-            payload={"PowerStationId": power_station_id},
-        )
-
-        powerflow = data.get("powerflow")
-        if not powerflow:
-            raise ProviderError(message="Missing powerflow data in GoodWe GetPowerflow")
-
-        power_str = powerflow.get("pv")
-        if power_str is None:
-            raise ProviderError(message="Missing power value in GoodWe GetPowerflow")
-
-        power = power_str.replace("W", "0")
-        return float(power)
-
-    def fetch_measurement(self) -> NormalizedMeasurement:
-        powerstation_id = getattr(self, "provider_external_id", None)
-        if not powerstation_id:
-            raise ProviderError(
-                message="GoodWe adapter missing powerstation identifier",
-                details={"vendor": self.vendor.value},
-            )
-
-        value = self.get_current_power(powerstation_id)
-        measured_at = datetime.now(timezone.utc)
-
-        return NormalizedMeasurement(
-            provider_id=getattr(self, "provider_id", 0),
-            value=value,
-            unit=PowerUnit.WATT.value,
-            measured_at=measured_at,
-            metadata={"powerstation_id": powerstation_id},
-        )
-
-    # ------------------------------------------------------------------
-    # REQUIRED BY BASE
-    # ------------------------------------------------------------------
-
-    def list_stations(self) -> list[Mapping[str, Any]]:
-        return [
-            {
-                "station_id": station_id,
-                "external_id": station_id,
-            }
-            for station_id in self.get_powerstation_ids()
-        ]
-
-    def list_devices(self, station_code: str) -> list[Mapping[str, Any]]:
-        return [
-            {
-                "device_id": station_code,
-                "external_id": station_code,
-            }
-        ]
-
-    def _collect_powerstation_ids(self, payload: Any) -> list[str]:
-        ids: list[str] = []
-
-        if isinstance(payload, str):
-            ids.append(payload)
-            return ids
-
-        if isinstance(payload, Mapping):
-            for key, value in payload.items():
-                key_lower = key.lower()
-                if "powerstation" in key_lower and "id" in key_lower:
-                    if isinstance(value, str):
-                        ids.append(value)
-                        continue
-                    if isinstance(value, list):
-                        for entry in value:
-                            ids.extend(self._collect_powerstation_ids(entry))
-                        continue
-                    if isinstance(value, Mapping):
-                        ids.extend(self._collect_powerstation_ids(value))
-                        continue
-                if isinstance(value, (Mapping, list)):
-                    ids.extend(self._collect_powerstation_ids(value))
-        elif isinstance(payload, list):
-            for entry in payload:
-                ids.extend(self._collect_powerstation_ids(entry))
-
-        return ids
-
-    # ------------------------------------------------------------------
-    # INTERNAL
-    # ------------------------------------------------------------------
 
     def _authenticate(self) -> None:
-        if self._logged_in:
-            return
 
-        response = self._request(
-            "POST",
-            "/api/v2/Common/CrossLogin",
-            json_data={
-                "account": self.username,
-                "pwd": self.password,
-                "agreement_agreement": 0,
-                "is_local": False,
-            },
-            headers={
-                "Content-Type": "application/json;charset=UTF-8",
-                "Accept": "application/json, text/plain, */*",
-                "User-Agent": "Mozilla/5.0",
-                "Token": json.dumps(
-                    {
-                        "client": "web",
-                        "language": "zh_CN",
-                        "version": self.SEMS_VER,
-                    },
-                    separators=(",", ":"),
-                ),
-            },
-        )
+        headers = {
+            "Content-Type": "application/json;charset=UTF-8",
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": "Mozilla/5.0",
+            "Token": json.dumps(
+                {
+                    "client": "web",
+                    "language": "zh_CN",
+                    "version": self.SEMS_VER,
+                },
+                separators=(",", ":"),
+            ),
+        }
+
+        body = {
+            "account": self.username,
+            "pwd": self.password,
+        }
+
+        old_base_url = self.base_url
+        try:
+            self.base_url = self._login_base_url
+            response = self._request(
+                "POST",
+                "/api/v2/Common/CrossLogin",
+                json_data=body,
+                headers=headers,
+            )
+        finally:
+            self.base_url = old_base_url
 
         try:
             payload = response.json()
         except ValueError as exc:
             raise ProviderFetchError(
-                "Invalid JSON from GoodWe login",
+                message="Invalid JSON from GoodWe login",
                 details={"body": response.text},
             ) from exc
 
@@ -294,13 +103,17 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
                 details={"response": payload},
             )
 
-        data = payload["data"]
-
+        data = payload.get("data")
         api_base = payload.get("api")
-        if not api_base:
-            raise ProviderError(message="Missing API base URL from GoodWe")
 
-        self.base_url = api_base.rstrip("/")
+        if not isinstance(data, dict) or not api_base:
+            raise ProviderError(
+                message="Incomplete login payload from GoodWe",
+                details={"response": payload},
+            )
+
+        self._api_base_url = api_base.rstrip("/")
+        self.base_url = self._api_base_url
 
         self._token_ctx = {
             "uid": data["uid"],
@@ -312,20 +125,30 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         }
 
         self._logged_in = True
-        logger.info("[GOODWE LOGIN OK] uid=%s", data["uid"])
+
+        logger.info("[GOODWE LOGIN OK]", extra={"uid": data["uid"]})
+
+    # ------------------------------------------------------------------
+    # TOKEN
+    # ------------------------------------------------------------------
 
     def _token_header(self) -> str:
         if not self._token_ctx:
             raise ProviderError(message="GoodWe adapter not authenticated")
+
         return json.dumps(self._token_ctx, separators=(",", ":"))
+
+    # ------------------------------------------------------------------
+    # HTTP
+    # ------------------------------------------------------------------
 
     def _post(self, path: str, payload: Mapping[str, Any]) -> Any:
         self._authenticate()
 
-        body = dict(payload)
+        if not self._api_base_url:
+            raise ProviderError(message="GoodWe API base URL not set")
 
-        if path.startswith("/api/v2") or path.startswith("/PowerStation"):
-            body["ver"] = self.SEMS_VER
+        body = dict(payload)
 
         response = self._request(
             "POST",
@@ -339,14 +162,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             },
         )
 
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise ProviderFetchError(
-                message="Invalid JSON from GoodWe API",
-                details={"body": response.text},
-            ) from exc
-
+        data = response.json()
         if data.get("code") not in (0, "0", None):
             raise ProviderError(
                 message=data.get("msg", "GoodWe API error"),
@@ -358,3 +174,111 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             )
 
         return data.get("data")
+
+    # ------------------------------------------------------------------
+    # DOMAIN
+    # ------------------------------------------------------------------
+
+    def get_powerstation_ids(self) -> list[str]:
+        if self._powerstation_ids is not None:
+            return self._powerstation_ids
+
+        data = self._post(
+            "/PowerStation/GetPowerStationIdByOwner",
+            {},
+        )
+
+        ids = self._collect_powerstation_ids(data)
+        if not ids:
+            raise ProviderError(
+                message="No PowerStation IDs returned by GoodWe",
+                details={"data": data},
+            )
+
+        self._powerstation_ids = list(dict.fromkeys(ids))
+        self._external_id = self._powerstation_ids[0]
+        return self._powerstation_ids
+
+    def get_current_export_power(self, power_station_id: str) -> float:
+        data = self._post(
+            "/v2/PowerStation/GetPowerflow",
+            {"PowerStationId": power_station_id},
+        )
+
+        if not isinstance(data, dict):
+            return 0.0
+
+        powerflow = data.get("powerflow")
+        if not isinstance(powerflow, dict):
+            return 0.0
+
+        has_powerflow = data.get("hasPowerflow", False)
+        has_microgrid = data.get("hasMicroGrid", False)
+
+        load_status = powerflow.get("loadStatus")
+        grid_w = _parse_watt(powerflow.get("grid"))
+
+        if (
+            has_powerflow
+            and not has_microgrid
+            and load_status == EXTRA_ENERGY_GRID_STATUS
+        ):
+            return grid_w
+
+        return 0.0
+
+    def get_current_power(self, device_id: str) -> float:
+        return self.get_current_export_power(device_id)
+
+    def fetch_measurement(self) -> NormalizedMeasurement:
+        if not self._external_id:
+            self.get_powerstation_ids()
+
+        value = self.get_current_power(self._external_id)
+
+        return NormalizedMeasurement(
+            provider_id=getattr(self, "provider_id", 0),
+            value=value,
+            unit=PowerUnit.WATT.value,
+            measured_at=datetime.now(timezone.utc),
+            metadata={"powerstation_id": self._external_id},
+        )
+
+    # ------------------------------------------------------------------
+    # REQUIRED BY BASE
+    # ------------------------------------------------------------------
+
+    def list_stations(self) -> list[Mapping[str, Any]]:
+        return [
+            {"station_id": sid, "external_id": sid}
+            for sid in self.get_powerstation_ids()
+        ]
+
+    def list_devices(self, station_code: str) -> list[Mapping[str, Any]]:
+        return [{"device_id": station_code, "external_id": station_code}]
+
+    # ------------------------------------------------------------------
+    # UTILS
+    # ------------------------------------------------------------------
+
+    def _collect_powerstation_ids(self, payload: Any) -> list[str]:
+        ids: list[str] = []
+
+        if isinstance(payload, str):
+            return [payload]
+
+        if isinstance(payload, Mapping):
+            for k, v in payload.items():
+                if "powerstation" in k.lower() and "id" in k.lower():
+                    if isinstance(v, str):
+                        ids.append(v)
+                    elif isinstance(v, (list, Mapping)):
+                        ids.extend(self._collect_powerstation_ids(v))
+                elif isinstance(v, (list, Mapping)):
+                    ids.extend(self._collect_powerstation_ids(v))
+
+        elif isinstance(payload, list):
+            for item in payload:
+                ids.extend(self._collect_powerstation_ids(item))
+
+        return ids

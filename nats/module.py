@@ -9,6 +9,7 @@ from smart_common.events.event_dispatcher import EventDispatcher
 from smart_common.nats.client import NATSClient
 from smart_common.nats.listener import NatsListener
 from smart_common.nats.publisher import NatsPublisher
+from smart_common.nats.event_helpers import stream_name
 
 logger = logging.getLogger(__name__)
 
@@ -29,17 +30,21 @@ class NatsModule:
             raise RuntimeError("JetStream context unavailable when ensuring stream.")
 
         try:
-            await js.stream_info("device_communication")
-            logger.info("[NATS] Stream device_communication already exists.")
+            existing = await js.stream_info(stream_name())
+            logger.info(
+                "[NATS] Stream %s already exists.", stream_name()
+            )
         except Exception:
-            logger.warning("[NATS] Stream missing — creating device_communication...")
+            logger.warning(
+                "[NATS] Stream missing — creating %s...", stream_name()
+            )
             await js.add_stream(
-                name="device_communication",
-                subjects=["device_communication.>"],
+                name=stream_name(),
+                subjects=[f"{stream_name()}.>"],
                 storage="file",
                 retention="limits",
             )
-            logger.info("[NATS] Stream device_communication created.")
+            logger.info("[NATS] Stream %s created.", stream_name())
 
     async def ensure_stream(self):
         await self._ensure_stream()

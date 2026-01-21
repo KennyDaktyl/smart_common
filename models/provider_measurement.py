@@ -25,7 +25,7 @@ class ProviderMeasurement(Base):
         index=True,
     )
     measured_value: Mapped[float | None] = mapped_column(
-        Numeric(12, 4),
+        Numeric(12, 2),
         nullable=True,
     )
     measured_unit: Mapped[str | None] = mapped_column(

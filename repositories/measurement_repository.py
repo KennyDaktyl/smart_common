@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import logging
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from typing import Iterable
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_measurement import ProviderMeasurement
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
+
+logger = logging.getLogger(__name__)
 
 
 class MeasurementRepository:
@@ -15,15 +21,20 @@ class MeasurementRepository:
         self,
         provider: Provider,
         measurement: NormalizedMeasurement,
+        *,
+        poll_id: str | None = None,
     ) -> ProviderMeasurement | None:
         if provider.id is None:
             raise ValueError("provider must be persisted before saving measurements")
 
         last_entry = self._fetch_last_measurement(provider.id)
-        should_persist = self._should_persist(last_entry, measurement)
-        self._update_provider_state(provider, measurement)
-
-        if not should_persist:
+        if last_entry and self._is_equivalent(last_entry, measurement):
+            self._update_last_measurement(
+                last_entry,
+                measurement,
+                provider_id=provider.id,
+                poll_id=poll_id,
+            )
             return None
 
         entry = ProviderMeasurement(
@@ -33,9 +44,44 @@ class MeasurementRepository:
             measured_unit=measurement.unit,
             metadata_payload=dict(measurement.metadata or {}),
         )
+
         self.session.add(entry)
         self.session.flush()
+
+        logger.info(
+            "Measurement persistence check",
+            extra={
+                "provider_id": provider.id,
+                "poll_id": poll_id,
+                "action": "inserted",
+            },
+        )
+
         return entry
+
+    def _update_last_measurement(
+        self,
+        entry: ProviderMeasurement,
+        measurement: NormalizedMeasurement,
+        *,
+        provider_id: int,
+        poll_id: str | None,
+    ) -> None:
+        entry.measured_at = measurement.measured_at
+        entry.measured_unit = measurement.unit
+        entry.measured_value = measurement.value
+        entry.metadata_payload = dict(measurement.metadata or {})
+        self.session.add(entry)
+        self.session.flush()
+
+        logger.info(
+            "Measurement persistence check",
+            extra={
+                "provider_id": provider_id,
+                "poll_id": poll_id,
+                "action": "refreshed",
+            },
+        )
 
     def _fetch_last_measurement(
         self,
@@ -48,25 +94,39 @@ class MeasurementRepository:
             .first()
         )
 
-    def _should_persist(
+    def get_last_measurements(
+        self,
+        provider_ids: Iterable[int],
+    ) -> dict[int, ProviderMeasurement]:
+        if not provider_ids:
+            return {}
+
+        stmt = (
+            select(ProviderMeasurement)
+            .where(ProviderMeasurement.provider_id.in_(provider_ids))
+            .order_by(
+                ProviderMeasurement.provider_id, ProviderMeasurement.measured_at.desc()
+            )
+        )
+        results = self.session.execute(stmt).scalars()
+        last_by_provider: dict[int, ProviderMeasurement] = {}
+        for measurement in results:
+            provider_id = measurement.provider_id
+            if provider_id not in last_by_provider:
+                last_by_provider[provider_id] = measurement
+        return last_by_provider
+
+    def _is_equivalent(
         self,
         last_entry: ProviderMeasurement | None,
         measurement: NormalizedMeasurement,
     ) -> bool:
         if last_entry is None:
-            return True
-
-        if last_entry.measured_value != measurement.value:
-            return True
+            return False
 
         if last_entry.measured_unit != measurement.unit:
-            return True
+            return False
 
-        return False
-
-    def _update_provider_state(
-        self,
-        provider: Provider,
-        measurement: NormalizedMeasurement,
-    ) -> None:
-        return
+        if last_entry.measured_value is None or measurement.value is None:
+            return last_entry.measured_value is None and measurement.value is None
+        return float(last_entry.measured_value) == measurement.value

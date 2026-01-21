@@ -162,6 +162,9 @@ def create_adapter_for_provider(
     setattr(adapter, "provider_external_id", external_id)
     setattr(adapter, "provider_id", provider.id)
 
+    if getattr(provider, "external_id", None):
+        setattr(adapter, "_external_id", provider.external_id)
+
     return adapter
 
 

@@ -53,11 +53,11 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
     def _ensure_login(self) -> None:
         if not self._logged_in or self._is_expired():
-            logger.info("Huawei login required")
+            logger.info("Huawei login required", extra=self._log_context())
             self._login()
 
     def _login(self) -> None:
-        logger.info("Huawei login start")
+        logger.info("Huawei login start", extra=self._log_context())
 
         payload = {
             "userName": self.username,
@@ -66,6 +66,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         logger.info(
             "Huawei login request",
             extra={
+                **self._log_context(),
                 "endpoint": "login",
                 "payload": payload,
             },
@@ -88,6 +89,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         logger.info(
             "Huawei login response",
             extra={
+                **self._log_context(),
                 "status_code": response.status_code,
                 "ok": response.ok,
                 "body": response.text,
@@ -126,7 +128,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         self._logged_in = True
         self._token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=25)
 
-        logger.info("Huawei login OK")
+        logger.info("Huawei login OK", extra=self._log_context())
 
     # ------------------------------------------------------------------
     # Internal POST helper (Huawei-specific)
@@ -139,6 +141,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         logger.info(
             "Huawei API request",
             extra={
+                **self._log_context(),
                 "endpoint": endpoint,
                 "payload": safe_payload,
             },
@@ -153,6 +156,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         logger.info(
             "Huawei API response",
             extra={
+                **self._log_context(),
                 "endpoint": endpoint,
                 "status_code": response.status_code,
                 "ok": response.ok,
@@ -168,6 +172,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             logger.info(
                 "Huawei API response (after relogin)",
                 extra={
+                    **self._log_context(),
                     "endpoint": endpoint,
                     "status_code": response.status_code,
                     "ok": response.ok,
@@ -189,6 +194,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             logger.info(
                 "Huawei API response (USER_MUST_RELOGIN)",
                 extra={
+                    **self._log_context(),
                     "endpoint": endpoint,
                     "status_code": response.status_code,
                     "body": response.text,
@@ -214,20 +220,23 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
     # ------------------------------------------------------------------
 
     def list_stations(self) -> list[Mapping[str, Any]]:
-        logger.info("Huawei → list stations")
+        logger.info("Huawei → list stations", extra=self._log_context())
 
         result = self._post("getStationList")
         stations = result.get("data", [])
 
         logger.info(
             "Huawei stations fetched",
-            extra={"count": len(stations)},
+            extra={**self._log_context(), "count": len(stations)},
         )
 
         return [self._normalize_station(s) for s in stations]
 
     def list_devices(self, station_code: str) -> list[Mapping[str, Any]]:
-        logger.info("Huawei → list devices", extra={"station_code": station_code})
+        logger.info(
+            "Huawei → list devices",
+            extra={**self._log_context(), "station_code": station_code},
+        )
 
         payload = {"stationCodes": station_code}
         result = self._post("getDevList", payload)
@@ -238,6 +247,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         logger.info(
             "Huawei inverters fetched",
             extra={
+                **self._log_context(),
                 "station_code": station_code,
                 "count": len(inverters),
             },
@@ -249,13 +259,14 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         payload = {"devTypeId": "1", "devIds": device_id}
         logger.info(
             "Huawei → get production",
-            extra={"payload": payload},
+            extra={**self._log_context(), "payload": payload},
         )
 
         result = self._post("getDevRealKpi", payload)
         logger.info(
             "Huawei API response",
             extra={
+                **self._log_context(),
                 "endpoint": "getDevRealKpi",
                 "status_code": result.get("status_code"),
                 "body": result.get("body"),
@@ -264,6 +275,10 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         return result.get("data", [])
 
     def get_current_power(self, device_id: str) -> float:
+        logger.info(
+            "Huawei fetch current power start",
+            extra=self._log_context(device_id=device_id),
+        )
         payload = self.get_production(device_id)
         data = payload[0] if isinstance(payload, list) and payload else payload
         if not isinstance(data, Mapping):
@@ -279,55 +294,28 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
                 details={"payload": payload},
             )
 
+        logger.info(
+            "Huawei current power value parsed",
+            extra=self._log_context(device_id=device_id, value=power_value),
+        )
         return power_value
 
     def _extract_power_value(self, payload: Mapping[str, Any]) -> float | None:
-        candidates = []
         data_item_map = payload.get("dataItemMap")
         if isinstance(data_item_map, Mapping):
-            candidates.extend(
-                (
-                    data_item_map.get(key)
-                    for key in (
-                        "active_power",
-                        "mppt_power",
-                        "activePower",
-                        "ppvPower",
-                        "total_power",
-                        "totalPower",
-                        "realPower",
-                        "pvtric",
-                    )
-                )
-            )
-
-        candidates.extend(
-            (
-                payload.get(key)
-                for key in (
-                    "active_power",
-                    "mppt_power",
-                    "activePower",
-                    "total_power",
-                    "totalPower",
-                    "realPower",
-                    "power",
-                    "pv",
-                    "currentPower",
-                    "powerFactor",
-                )
-            )
-        )
-
-        for candidate in candidates:
-            if candidate is None:
-                continue
-            try:
-                return float(candidate)
-            except (TypeError, ValueError):
-                continue
-
-        return None
+            value = data_item_map.get("active_power")
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+        active_power = payload.get("active_power")
+        if active_power is None:
+            return None
+        try:
+            return float(active_power)
+        except (TypeError, ValueError):
+            return None
 
     # ------------------------------------------------------------------
     # Normalization
@@ -358,6 +346,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         }
 
     def fetch_measurement(self) -> NormalizedMeasurement:
+        logger.info("Huawei fetching measurement", extra=self._log_context())
         device_id = getattr(self, "provider_external_id", None)
         if not device_id:
             raise ProviderError(
@@ -368,6 +357,10 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         value = self.get_current_power(device_id)
         measured_at = datetime.now(timezone.utc)
 
+        logger.info(
+            "Huawei measurement ready",
+            extra=self._log_context(device_id=device_id, value=value),
+        )
         return NormalizedMeasurement(
             provider_id=getattr(self, "provider_id", 0),
             value=value,

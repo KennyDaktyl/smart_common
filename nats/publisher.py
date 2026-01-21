@@ -11,35 +11,165 @@ logger = logging.getLogger(__name__)
 class NatsPublisher:
     def __init__(self, client):
         self.client = client
+        self._closing = False
+        self._publish_lock = asyncio.Lock()
 
-    async def publish(self, subject: str, payload: Dict[str, Any], retries=3):
+    async def publish(
+        self,
+        subject: str,
+        payload: Dict[str, Any],
+        *,
+        retries: int = 3,
+        context: Dict[str, Any] | None = None,
+    ):
+        if self._closing:
+            raise RuntimeError("NATS publisher is shutting down")
+
+        context = context or {}
         data = json.dumps(payload).encode("utf-8")
+        last_error: Exception | None = None
 
         for attempt in range(1, retries + 1):
+            if self.client.is_draining():
+                await self._handle_draining_connection(context, subject, attempt)
+                last_error = RuntimeError("NATS connection draining")
+                await asyncio.sleep(self._backoff(attempt))
+                continue
+
+            async with self._publish_lock:
+                if not await self._ensure_ready_for_publish(context, subject, attempt):
+                    last_error = RuntimeError("NATS connection not ready")
+                    await asyncio.sleep(self._backoff(attempt))
+                    continue
+
+                try:
+                    logger.info(
+                        "[NATS] Publishing",
+                        extra={
+                            **context,
+                            "subject": subject,
+                            "attempt": attempt,
+                        },
+                    )
+                    js = self.client.js
+                    if not js:
+                        raise RuntimeError("JetStream not initialized")
+
+                    ack = await js.publish(
+                        subject=subject,
+                        payload=data,
+                        timeout=5.0,
+                    )
+
+                    logger.info(
+                        "[NATS] Published",
+                        extra={
+                            **context,
+                            "subject": subject,
+                            "seq": ack.seq,
+                            "payload_bytes": len(data),
+                            "payload": data,
+                        },
+                    )
+                    return ack
+
+                except Exception as exc:
+                    last_error = exc
+                    logger.error(
+                        "[NATS] Publish failed",
+                        extra={
+                            **context,
+                            "subject": subject,
+                            "attempt": attempt,
+                            "error": str(exc),
+                        },
+                    )
+                    if attempt < retries:
+                        await self._recover_connection(exc, context, subject, attempt)
+                        await asyncio.sleep(self._backoff(attempt))
+                    else:
+                        raise
+
+        raise Exception(
+            f"NATS publish failed after {retries} attempts",
+            last_error,
+        )
+
+    async def _ensure_ready_for_publish(
+        self,
+        context: Dict[str, Any],
+        subject: str,
+        attempt: int,
+    ) -> bool:
+        if self.client.is_ready():
+            return True
+
+        try:
+            await self.client.ensure_connected()
+        except Exception as exc:
+            logger.warning(
+                "[NATS] Ensure connected failed",
+                extra={
+                    **context,
+                    "subject": subject,
+                    "attempt": attempt,
+                    "error": str(exc),
+                },
+            )
+            return False
+
+        return self.client.is_ready()
+
+    async def _handle_draining_connection(
+        self,
+        context: Dict[str, Any],
+        subject: str,
+        attempt: int,
+    ) -> None:
+        logger.warning(
+            "[NATS] Connection draining before publish",
+            extra={
+                **context,
+                "subject": subject,
+                "attempt": attempt,
+            },
+        )
+        await self._recover_connection(
+            RuntimeError("connection draining"),
+            context,
+            subject,
+            attempt,
+        )
+
+    async def _recover_connection(
+        self,
+        exc: Exception,
+        context: Dict[str, Any],
+        subject: str,
+        attempt: int,
+    ) -> None:
+        if self.client.nc and getattr(self.client.nc, "is_closed", False):
             try:
-                await self.client.connect()
-
-                if not self.client.js:
-                    raise RuntimeError("JetStream not initialized")
-
-                ack = await self.client.js.publish(
-                    subject=subject,
-                    payload=data,
-                    timeout=5.0,
+                await self.client.reset_connection()
+            except Exception as reset_exc:
+                logger.warning(
+                    "[NATS] Reconnection step failed",
+                    extra={
+                        **context,
+                        "subject": subject,
+                        "attempt": attempt,
+                        "error": str(reset_exc),
+                    },
                 )
 
-                logger.info(f"[NATS] Published {subject}, seq={ack.seq}")
+    def _backoff(self, attempt: int) -> float:
+        return min(0.3, 0.1 * attempt)
 
-                await self.client.nc.drain()
-                await self.client.nc.close()
-
-                return ack
-
-            except Exception as e:
-                logger.error(f"[NATS] Publish failed (attempt {attempt}/{retries}): {e}")
-                await asyncio.sleep(0.5 * attempt)
-
-        raise Exception(f"NATS publish failed after {retries} attempts")
+    async def close(self):
+        if self._closing:
+            return
+        self._closing = True
+        await self.client.close()
 
     async def publish_and_wait_for_ack(
         self,

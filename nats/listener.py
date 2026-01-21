@@ -4,6 +4,7 @@ import logging
 from nats.js.api import DeliverPolicy
 
 from smart_common.nats.client import nats_client
+from smart_common.nats.event_helpers import stream_name
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,9 @@ class NatsListener:
                 logger.exception(f"[NATS] Failed to process message: {e}")
 
         sub = await self.client.js.subscribe(
-            subject="device_communication.>",
+            subject=f"{stream_name()}.>",
             durable=self.consumer_name,
-            stream="device_communication",
+            stream=stream_name(),
             manual_ack=True,
             ack_wait=10,
             deliver_policy=DeliverPolicy.NEW,
@@ -40,8 +41,9 @@ class NatsListener:
         )
 
         logger.info(
-            "[NATS] Listener subscribed to device_communication.> "
-            f"with durable={self.consumer_name}"
+            "[NATS] Listener subscribed to %s.> with durable=%s",
+            stream_name(),
+            self.consumer_name,
         )
 
         return sub

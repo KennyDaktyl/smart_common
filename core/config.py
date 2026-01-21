@@ -38,6 +38,7 @@ class CommonSettings(BaseSettings):
     NATS_URL: str = "nats://nats:4222"
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
+    STREAM_NAME: str = "device_communications.events"
 
     # ------------------------------------------------------------------
     # Security (REQUIRED)

@@ -21,6 +21,8 @@ class NATSClient:
         self.connected_once = False
         self.reconnect_time_wait = self.DEFAULT_RECONNECT_TIME_WAIT
         self.max_reconnect_attempts = self.DEFAULT_MAX_RECONNECT_ATTEMPTS
+        self._shutdown = False
+        self._drain_started = False
 
     async def connect(
         self,
@@ -28,6 +30,9 @@ class NATSClient:
         name: str = "smartenergy-service",
         max_reconnect_attempts: int | None = None,
     ):
+        if self._shutdown:
+            raise RuntimeError("NATS client is shut down")
+
         if self.nc and self.nc.is_connected:
             return
 
@@ -71,12 +76,41 @@ class NATSClient:
 
         self.js = self.nc.jetstream()
         self.connected_once = True
+        self._drain_started = False
 
         logger.info("[NATS] Connected")
 
     async def ensure_connected(self):
         if not self.nc or not self.nc.is_connected:
             await self.connect()
+
+    async def reset_connection(self):
+        await self._force_close(drain=False)
+        self.connected_once = False
+        self._drain_started = False
+        self._shutdown = False
+
+    def is_draining(self) -> bool:
+        if self._drain_started:
+            return True
+        if not self.nc:
+            return False
+        if getattr(self.nc, "is_closed", False):
+            return True
+        status = getattr(self.nc, "status", None)
+        if status is None:
+            return False
+        status_name = getattr(status, "name", status)
+        return str(status_name).upper() == "DRAINING"
+
+    def is_ready(self) -> bool:
+        if self._shutdown:
+            return False
+        if not self.nc:
+            return False
+        if getattr(self.nc, "is_connected", False) and not self.is_draining():
+            return True
+        return False
 
     async def publish(self, subject: str, payload: dict):
         """Simple fire-and-forget publish"""
@@ -117,20 +151,33 @@ class NATSClient:
         return sub
 
     async def close(self):
+        if self._shutdown:
+            return
+
+        self._shutdown = True
+        self._drain_started = True
+
+        await self._force_close()
+
+        logger.info("[NATS] Closed.")
+
+    async def _force_close(self, *, drain: bool = True):
         if not self.nc:
             return
-        try:
-            logger.info("[NATS] Draining...")
-            await self.nc.drain()
-        except:
-            pass
+        if drain:
+            try:
+                logger.info("[NATS] Draining...")
+                await self.nc.drain()
+            except Exception:
+                pass
 
         try:
             await self.nc.close()
-        except:
+        except Exception:
             pass
 
-        logger.info("[NATS] Closed.")
+        self.nc = None
+        self.js = None
 
 
 nats_client = NATSClient()

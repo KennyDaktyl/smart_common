@@ -158,3 +158,22 @@ class BaseProviderAdapter(BaseHttpAdapter, ABC):
 
     def normalize_device(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
         return raw
+
+    def _log_context(
+        self,
+        *,
+        task_name: str | None = None,
+        **overrides: Any,
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "provider_id": getattr(self, "provider_id", None),
+            "vendor": self.vendor.value if self.vendor else None,
+        }
+        poll_id = getattr(self, "poll_id", None)
+        if poll_id:
+            context["poll_id"] = poll_id
+        name = task_name or getattr(self, "task_name", None)
+        if name:
+            context["taskName"] = name
+        context.update(overrides)
+        return context

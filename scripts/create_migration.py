@@ -8,7 +8,8 @@ from pathlib import Path
 # BOOTSTRAP
 # ======================================================
 BASE_DIR = Path(__file__).resolve().parents[1]  # smart_common
-sys.path.insert(0, str(BASE_DIR))
+PROJECT_DIR = BASE_DIR.parent
+sys.path.insert(0, str(PROJECT_DIR))
 
 # ======================================================
 # IMPORTS

@@ -43,6 +43,11 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    providers = relationship(
+        "Provider",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     profile = relationship(
         "UserProfile",
         back_populates="user",

@@ -106,8 +106,23 @@ class Microcontroller(Base):
 
     @property
     def assigned_sensors(self) -> list[str]:
-        # Immutable hardware capabilities declared at provisioning time.
         return [capability.sensor_type for capability in self.sensor_capabilities]
+
+    @property
+    def active_provider(self):
+        return self.power_provider
+
+    @property
+    def available_sensor_providers(self):
+        return self.sensor_providers or []
+
+    @property
+    def available_api_providers(self):
+        return []
+
+    @property
+    def user_email(self):
+        return self.user.email if self.user else None
 
     def __repr__(self) -> str:
         return (

@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import logging
 from inspect import Parameter, signature
-from typing import Any, Mapping, Tuple
+from typing import TYPE_CHECKING, Any, Mapping, Tuple
 
 from cryptography.fernet import InvalidToken
 
 from smart_common.core.security import decrypt_secret
-from smart_common.models.provider import Provider
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.definitions import registry as _  # ensure definitions register
 from smart_common.providers.definitions.base import ProviderDefinition, ProviderDefinitionRegistry
 from smart_common.providers.enums import ProviderVendor
 from smart_common.providers.exceptions import ProviderConfigError, ProviderNotSupportedError
+
+if TYPE_CHECKING:
+    from smart_common.models.provider import Provider  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +126,7 @@ def get_vendor_adapter_factory() -> VendorAdapterFactory:
 
 
 def create_adapter_for_provider(
-    provider: Provider,
+    provider: "Provider",
     *,
     factory: VendorAdapterFactory | None = None,
 ) -> BaseProviderAdapter:
@@ -168,7 +170,7 @@ def create_adapter_for_provider(
     return adapter
 
 
-def _resolve_provider_credentials(provider: Provider) -> dict[str, str]:
+def _resolve_provider_credentials(provider: "Provider") -> dict[str, str]:
     credentials = getattr(provider, "credentials", None)
     if credentials is None:
         return {}

@@ -57,12 +57,6 @@ class Provider(Base):
         index=True,
     )
 
-    microcontroller_id: Mapped[int | None] = mapped_column(
-        ForeignKey("microcontrollers.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
     name: Mapped[str] = mapped_column(String, nullable=False)
 
     # ---------- classification ----------
@@ -119,11 +113,6 @@ class Provider(Base):
         nullable=True,
     )
 
-    microcontroller = relationship(
-        "Microcontroller",
-        back_populates="sensor_providers",
-        foreign_keys=[microcontroller_id],
-    )
     user = relationship("User")
     credentials = relationship(
         "ProviderCredential",

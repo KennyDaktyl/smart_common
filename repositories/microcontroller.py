@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import String, cast, or_
-from sqlalchemy.orm import Query, joinedload
+from sqlalchemy.orm import Query, selectinload
 
 from smart_common.models.microcontroller import Microcontroller
 from smart_common.models.user import User
@@ -18,7 +18,6 @@ search_fields = (
     cast(Microcontroller.user_id, String),
     cast(Microcontroller.name, String),
     User.email,
-    User.id,
 )
 
 
@@ -34,12 +33,34 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         "user_id",
     }
 
+    # =====================================================
+    # EAGER LOADING – SINGLE SOURCE OF TRUTH
+    # =====================================================
+
+    def _full_options(self) -> list:
+        return [
+            selectinload(Microcontroller.user),
+            selectinload(Microcontroller.devices),
+            selectinload(Microcontroller.sensor_providers),
+            selectinload(Microcontroller.power_provider),
+            selectinload(Microcontroller.sensor_capabilities),
+        ]
+
+    # =====================================================
+    # BASIC GETTERS
+    # =====================================================
+
     def get_by_uuid(self, uuid: UUID) -> Optional[Microcontroller]:
-        return self.session.query(self.model).filter(self.model.uuid == uuid).first()
+        return (
+            self.session.query(self.model).filter(self.model.uuid == uuid).one_or_none()
+        )
 
     def get_for_user(self, user_id: int) -> List[Microcontroller]:
         return (
-            self.session.query(self.model).filter(self.model.user_id == user_id).all()
+            self.session.query(self.model)
+            .filter(self.model.user_id == user_id)
+            .options(*self._full_options())
+            .all()
         )
 
     def get_for_user_by_uuid(
@@ -51,13 +72,25 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
                 self.model.uuid == uuid,
                 self.model.user_id == user_id,
             )
-            .first()
+            .options(*self._full_options())
+            .one_or_none()
         )
+
+    def get_full_by_id(self, microcontroller_id: int) -> Optional[Microcontroller]:
+        return (
+            self.session.query(self.model)
+            .filter(self.model.id == microcontroller_id)
+            .options(*self._full_options())
+            .one_or_none()
+        )
+
+    # =====================================================
+    # CREATE / UPDATE / DELETE
+    # =====================================================
 
     def create(self, data: dict) -> Microcontroller:
         microcontroller = Microcontroller(**data)
         self.session.add(microcontroller)
-        self.session.flush()
         self.session.commit()
         self.session.refresh(microcontroller)
         return microcontroller
@@ -68,9 +101,11 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         microcontroller = self.get_for_user_by_uuid(uuid, user_id)
         if not microcontroller:
             return None
+
         for key, value in data.items():
             setattr(microcontroller, key, value)
-        self.session.flush()
+
+        self.session.commit()
         self.session.refresh(microcontroller)
         return microcontroller
 
@@ -78,13 +113,13 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         microcontroller = self.get_for_user_by_uuid(uuid, user_id)
         if not microcontroller:
             return False
+
         self.session.delete(microcontroller)
-        self.session.flush()
+        self.session.commit()
         return True
 
     def delete_by_id(self, microcontroller_id: int) -> None:
         microcontroller = self.get_by_id(microcontroller_id)
-
         if not microcontroller:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -94,50 +129,9 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         self.session.delete(microcontroller)
         self.session.commit()
 
-    def get_full_for_user(self, user_id: int):
-        microcontrollers = (
-            self.session.query(self.model)
-            .filter(self.model.user_id == user_id)
-            .options(
-                joinedload(self.model.devices),
-                joinedload(self.model.sensor_providers),
-                joinedload(self.model.power_provider),
-                joinedload(self.model.sensor_capabilities),
-            )
-            .all()
-        )
-        return microcontrollers
-
-    def _with_full_options(self, query: Query) -> Query:
-        return query.options(
-            joinedload(self.model.devices),
-            joinedload(self.model.sensor_providers),
-            joinedload(self.model.power_provider),
-            joinedload(self.model.sensor_capabilities),
-            joinedload(self.model.user),
-        )
-
-    def list_full(
-        self,
-        *,
-        limit: int | None = None,
-        offset: int | None = None,
-        filters: dict[str, Any] | None = None,
-        order_by: Any | None = None,
-    ) -> list[Microcontroller]:
-        query = self._with_full_options(self._base_query())
-        query = self._apply_filters(query, filters)
-
-        if order_by is not None:
-            query = query.order_by(order_by)
-
-        if offset is not None:
-            query = query.offset(offset)
-
-        if limit is not None:
-            query = query.limit(limit)
-
-        return query.all()
+    # =====================================================
+    # ADMIN LISTING
+    # =====================================================
 
     def list_admin(
         self,
@@ -150,13 +144,7 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         query = (
             self.session.query(self.model)
             .outerjoin(User)
-            .options(
-                joinedload(self.model.user),
-                joinedload(self.model.devices),
-                joinedload(self.model.sensor_providers),
-                joinedload(self.model.power_provider),
-                joinedload(self.model.sensor_capabilities),
-            )
+            .options(*self._full_options())
         )
 
         if search:
@@ -175,21 +163,11 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
 
         return query.count()
 
-    def get_full_by_id(self, id: int) -> Microcontroller | None:
-        return (
-            self.session.query(self.model)
-            .filter(self.model.id == id)
-            .options(
-                joinedload(self.model.user),
-                joinedload(self.model.devices),
-                joinedload(self.model.sensor_providers),
-                joinedload(self.model.power_provider),
-                joinedload(self.model.sensor_capabilities),
-            )
-            .one_or_none()
-        )
+    # =====================================================
+    # SEARCH
+    # =====================================================
 
-    def _apply_microcontroller_search(self, query, search: str):
+    def _apply_microcontroller_search(self, query: Query, search: str) -> Query:
         conditions = []
 
         if search.isdigit():
@@ -204,5 +182,6 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
             pass
 
         conditions.append(User.email.ilike(f"%{search}%"))
+        conditions.append(self.model.name.ilike(f"%{search}%"))
 
         return query.filter(or_(*conditions))

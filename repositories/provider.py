@@ -14,7 +14,7 @@ class ProviderRepository(BaseRepository[Provider]):
     model = Provider
 
     def list_for_user(self, user_id: int) -> list[Provider]:
-        return self.list(filters={"user_id": user_id})
+        return self.list(filters={"user_id": user_id}, order_by=Provider.id)
 
     def get_active_providers(self) -> list[Provider]:
         query = (

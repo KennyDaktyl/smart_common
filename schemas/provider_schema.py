@@ -81,7 +81,6 @@ class ProviderUpdateRequest(APIModel):
 class ProviderResponse(ORMModel):
     id: int
     uuid: UUID
-    microcontroller_id: Optional[int]
 
     name: str
     provider_type: ProviderType
@@ -109,7 +108,7 @@ class ProviderResponse(ORMModel):
     )
 
 
-class ProviderStatusRequest(APIModel):
+class ProviderEnabledUpdateRequest(APIModel):
     enabled: bool
 
 
@@ -121,8 +120,6 @@ class ProviderCatalogItem(APIModel):
     unit: PowerUnit | None = None
     enabled: bool | None = None
     uuid: UUID | None = None
-    microcontroller_uuid: UUID | None = None
-    microcontroller_name: str | None = None
     is_attached: bool | None = None
     is_virtual: bool = False
     description: str | None = None

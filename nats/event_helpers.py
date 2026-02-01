@@ -35,6 +35,7 @@ def build_event_payload(
     event_id: str | None = None,
     timestamp: str | None = None,
     data_version: str = EVENT_DATA_VERSION,
+    subject: str,
 ) -> Dict[str, Any]:
     """Construct the canonical event envelope."""
     normalized_source = source or DEFAULT_EVENT_SOURCE
@@ -43,6 +44,7 @@ def build_event_payload(
     resolved_event_id = event_id or uuid4().hex
 
     return {
+        "subject": subject,
         "event_type": event_type,
         "event_id": resolved_event_id,
         "source": normalized_source,

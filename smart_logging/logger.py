@@ -1,8 +1,7 @@
-# smart_common/smart_logging/logger.py
 import logging
 import sys
-import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from smart_common.core.config import settings
 from smart_common.smart_logging.custom_rotating_handler import (
@@ -12,15 +11,16 @@ from smart_common.smart_logging.formatter import ExtraFormatter
 
 
 def setup_logging():
-    from pathlib import Path
+    # === GUARD: konfigurujemy logging tylko raz ===
+    if getattr(setup_logging, "_configured", False):
+        return
+    setup_logging._configured = True
 
     log_dir = Path(settings.LOG_DIR)
-
     if not log_dir.is_absolute():
         log_dir = (Path.cwd() / log_dir).resolve()
 
     log_dir.mkdir(parents=True, exist_ok=True)
-
     LOG_DIR = str(log_dir)
 
     FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
@@ -41,7 +41,7 @@ def setup_logging():
     console_handler.setFormatter(formatter)
 
     # =========================
-    # ROOT LOGGER (APLIKACJA)
+    # ROOT LOGGER
     # =========================
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -50,23 +50,10 @@ def setup_logging():
     root.addHandler(console_handler)
 
     # =========================
-    # UVICORN LOGGERS → FILE
+    # UVICORN → PROPAGATE DO ROOT
     # =========================
-
-    uvicorn_error = logging.getLogger("uvicorn.error")
-    uvicorn_access = logging.getLogger("uvicorn.access")
-
-    uvicorn_error.handlers.clear()
-    uvicorn_access.handlers.clear()
-
-    uvicorn_error.addHandler(file_handler)
-    uvicorn_access.addHandler(file_handler)
-
-    uvicorn_error.setLevel(logging.INFO)
-    uvicorn_access.setLevel(logging.INFO)
-
-    uvicorn_error.propagate = False
-    uvicorn_access.propagate = False
+    logging.getLogger("uvicorn.error").propagate = True
+    logging.getLogger("uvicorn.access").propagate = True
 
     # =========================
     # STARTUP LOG

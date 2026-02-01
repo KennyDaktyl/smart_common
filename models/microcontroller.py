@@ -80,12 +80,12 @@ class Microcontroller(Base):
     # --- Relations ---
     user = relationship("User", back_populates="microcontrollers")
 
-    sensor_providers = relationship(
-        "Provider",
-        back_populates="microcontroller",
-        cascade="all, delete-orphan",
-        foreign_keys="Provider.microcontroller_id",
-    )
+    # sensor_providers = relationship(
+    #     "Provider",
+    #     back_populates="microcontroller",
+    #     cascade="all, delete-orphan",
+    #     foreign_keys="Provider.microcontroller_id",
+    # )
 
     power_provider = relationship(
         "Provider",

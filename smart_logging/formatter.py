@@ -1,4 +1,3 @@
-# smart_common/smart_logging/formatter.py
 import logging
 import json
 

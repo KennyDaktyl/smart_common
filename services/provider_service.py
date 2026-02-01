@@ -84,20 +84,20 @@ class ProviderService:
             )
         return provider
 
-    def _ensure_provider_for_microcontroller(
-        self,
-        db: Session,
-        user_id: int,
-        provider_id: int,
-        microcontroller_id: int,
-    ) -> Provider:
-        provider = self._ensure_provider(db, user_id, provider_id)
-        if provider.microcontroller_id != microcontroller_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Provider not found",
-            )
-        return provider
+    # def _ensure_provider_for_microcontroller(
+    #     self,
+    #     db: Session,
+    #     user_id: int,
+    #     provider_id: int,
+    #     microcontroller_id: int,
+    # ) -> Provider:
+    #     provider = self._ensure_provider(db, user_id, provider_id)
+    #     if provider.microcontroller_id != microcontroller_id:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND,
+    #             detail="Provider not found",
+    #         )
+    #     return provider
 
     # ---------- CONFIG VALIDATION (TU JEST KLUCZ) ----------
 
@@ -482,21 +482,21 @@ class ProviderService:
         )
         return provider
 
-    def update_for_microcontroller(
-        self,
-        db: Session,
-        user_id: int,
-        microcontroller_id: int,
-        provider_id: int,
-        payload: dict,
-    ) -> Provider:
-        provider = self._ensure_provider_for_microcontroller(
-            db,
-            user_id,
-            provider_id,
-            microcontroller_id,
-        )
-        return self.update(db, user_id, provider.id, payload)
+    # def update_for_microcontroller(
+    #     self,
+    #     db: Session,
+    #     user_id: int,
+    #     microcontroller_id: int,
+    #     provider_id: int,
+    #     payload: dict,
+    # ) -> Provider:
+    #     provider = self._ensure_provider_for_microcontroller(
+    #         db,
+    #         user_id,
+    #         provider_id,
+    #         microcontroller_id,
+    #     )
+    #     return self.update(db, user_id, provider.id, payload)
 
     def set_enabled(
         self,

@@ -77,7 +77,6 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.user_id == user_id,
                 self.model.vendor == vendor,
                 self.model.external_id == external_id,
-                self.model.microcontroller_id.is_(None),
             )
             .limit(1)
         )

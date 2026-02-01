@@ -38,7 +38,7 @@ class CommonSettings(BaseSettings):
     NATS_URL: str = "nats://nats:4222"
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
-    STREAM_NAME: str = "device_communications.events"
+    STREAM_NAME: str = "device_communication.events"
 
     # ------------------------------------------------------------------
     # Security (REQUIRED)
@@ -48,6 +48,8 @@ class CommonSettings(BaseSettings):
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    AGENT_API_TOKEN: str = "token"
 
     # ------------------------------------------------------------------
     # Email / SMTP (REQUIRED)

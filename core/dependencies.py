@@ -1,6 +1,6 @@
 from typing import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Header, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from smart_common.core.security import TokenType, decode_and_validate_token
 from smart_common.enums.user import UserRole
 from smart_common.models.user import User
 from smart_common.repositories.user import UserRepository
+from smart_common.core.config import settings
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -74,7 +75,11 @@ def require_role(*roles: UserRole) -> Callable[[User], User]:
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         role_value = current_user.role
         try:
-            role = UserRole(role_value) if not isinstance(role_value, UserRole) else role_value
+            role = (
+                UserRole(role_value)
+                if not isinstance(role_value, UserRole)
+                else role_value
+            )
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -90,3 +95,21 @@ def require_role(*roles: UserRole) -> Callable[[User], User]:
         return current_user
 
     return dependency
+
+
+def get_current_agent(authorization: str = Header(...)):
+    """
+    Simple machine-to-machine auth using static token.
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+
+    token = authorization.removeprefix("Bearer ").strip()
+
+    if token != settings.AGENT_API_TOKEN:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+
+    return {
+        "type": "agent",
+        "name": "smart_energy_agent",
+    }

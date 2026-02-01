@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 from typing import Iterable
 
@@ -130,3 +131,25 @@ class MeasurementRepository:
         if last_entry.measured_value is None or measurement.value is None:
             return last_entry.measured_value is None and measurement.value is None
         return float(last_entry.measured_value) == measurement.value
+
+    def list_for_provider(
+        self,
+        *,
+        provider_id: int,
+        date_start: datetime,
+        date_end: datetime,
+        limit: int,
+    ) -> list[ProviderMeasurement]:
+        return (
+            self.session.query(ProviderMeasurement)
+            .filter(
+                and_(
+                    ProviderMeasurement.provider_id == provider_id,
+                    ProviderMeasurement.measured_at >= date_start,
+                    ProviderMeasurement.measured_at <= date_end,
+                )
+            )
+            .order_by(ProviderMeasurement.measured_at.asc())
+            .limit(limit)
+            .all()
+        )

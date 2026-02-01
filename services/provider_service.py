@@ -84,6 +84,7 @@ class ProviderService:
             )
         return provider
 
+<<<<<<< HEAD
     # def _ensure_provider_for_microcontroller(
     #     self,
     #     db: Session,
@@ -98,6 +99,21 @@ class ProviderService:
     #             detail="Provider not found",
     #         )
     #     return provider
+=======
+    def _ensure_provider_for_microcontroller(
+        self,
+        db: Session,
+        user_id: int,
+        provider_id: int,
+    ) -> Provider:
+        provider = self._ensure_provider(db, user_id, provider_id)
+        if provider.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found",
+            )
+        return provider
+>>>>>>> b480db2f0e7bc39d0bcf074d27be8099b5b3b9e7
 
     # ---------- CONFIG VALIDATION (TU JEST KLUCZ) ----------
 
@@ -298,7 +314,7 @@ class ProviderService:
         return (
             db.query(Provider)
             .filter(
-                Provider.microcontroller_id == microcontroller.id,
+                Provider.user_id == user_id.id,
                 Provider.provider_type == ProviderType.SENSOR,
             )
             .all()
@@ -341,7 +357,6 @@ class ProviderService:
             vendor=vendor,
             definition=definition,
             user_id=microcontroller.user_id,
-            microcontroller_id=microcontroller.id,
         )
         return provider
 
@@ -395,7 +410,6 @@ class ProviderService:
             vendor=vendor,
             definition=definition,
             user_id=user_id,
-            microcontroller_id=None,
         )
 
         return provider
@@ -486,7 +500,6 @@ class ProviderService:
     #     self,
     #     db: Session,
     #     user_id: int,
-    #     microcontroller_id: int,
     #     provider_id: int,
     #     payload: dict,
     # ) -> Provider:
@@ -494,7 +507,6 @@ class ProviderService:
     #         db,
     #         user_id,
     #         provider_id,
-    #         microcontroller_id,
     #     )
     #     return self.update(db, user_id, provider.id, payload)
 
@@ -528,7 +540,6 @@ class ProviderService:
         self,
         db: Session,
         user_id: int,
-        microcontroller_id: int,
         provider_id: int,
         enabled: bool,
     ) -> Provider:
@@ -536,7 +547,6 @@ class ProviderService:
             db,
             user_id,
             provider_id,
-            microcontroller_id,
         )
         return self.set_enabled(db, user_id, provider.id, enabled)
 
@@ -625,7 +635,6 @@ class ProviderService:
         definition: ProviderDefinition,
         *,
         user_id: int,
-        microcontroller_id: int | None,
     ) -> Provider:
         payload_type = payload.get("provider_type")
         if payload_type and payload_type != definition.provider_type:
@@ -674,7 +683,6 @@ class ProviderService:
         payload["vendor"] = vendor
         payload["provider_type"] = definition.provider_type
         payload["user_id"] = user_id
-        payload["microcontroller_id"] = microcontroller_id
         payload["external_id"] = external_id
         payload["enabled"] = False
         payload["expected_interval_sec"] = definition.default_expected_interval_sec

@@ -80,6 +80,7 @@ class Microcontroller(Base):
     # --- Relations ---
     user = relationship("User", back_populates="microcontrollers")
 
+<<<<<<< HEAD
     # sensor_providers = relationship(
     #     "Provider",
     #     back_populates="microcontroller",
@@ -87,6 +88,8 @@ class Microcontroller(Base):
     #     foreign_keys="Provider.microcontroller_id",
     # )
 
+=======
+>>>>>>> b480db2f0e7bc39d0bcf074d27be8099b5b3b9e7
     power_provider = relationship(
         "Provider",
         foreign_keys=[power_provider_id],
@@ -95,6 +98,7 @@ class Microcontroller(Base):
     devices = relationship(
         "Device",
         back_populates="microcontroller",
+        order_by="Device.device_number",
         cascade="all, delete-orphan",
     )
 
@@ -111,14 +115,6 @@ class Microcontroller(Base):
     @property
     def active_provider(self):
         return self.power_provider
-
-    @property
-    def available_sensor_providers(self):
-        return self.sensor_providers or []
-
-    @property
-    def available_api_providers(self):
-        return []
 
     @property
     def user_email(self):

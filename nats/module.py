@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from smart_common.events.event_dispatcher import EventDispatcher
 from smart_common.nats.client import NATSClient
 from smart_common.nats.listener import NatsListener
 from smart_common.nats.publisher import NatsPublisher
@@ -20,7 +19,6 @@ class NatsModule:
         self.client = NATSClient()
         self.publisher = NatsPublisher(self.client)
         self.listener = NatsListener(self.client)
-        self.events = EventDispatcher(self.publisher)
         self.create_stream = create_stream
 
     async def _ensure_stream(self):
@@ -31,13 +29,9 @@ class NatsModule:
 
         try:
             existing = await js.stream_info(stream_name())
-            logger.info(
-                "[NATS] Stream %s already exists.", stream_name()
-            )
+            logger.info("[NATS] Stream %s already exists.", stream_name())
         except Exception:
-            logger.warning(
-                "[NATS] Stream missing — creating %s...", stream_name()
-            )
+            logger.warning("[NATS] Stream missing — creating %s...", stream_name())
             await js.add_stream(
                 name=stream_name(),
                 subjects=[f"{stream_name()}.>"],

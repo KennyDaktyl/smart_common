@@ -11,13 +11,14 @@ from smart_common.repositories.base import BaseRepository
 
 class DeviceRepository(BaseRepository[Device]):
     model = Device
+    default_order_by = Device.id.asc()
 
     def list_for_user(self, user_id: int) -> list[Device]:
         return (
             self.session.query(Device)
             .join(Device.microcontroller)
             .filter(Microcontroller.user_id == user_id)
-            .order_by(Device.created_at.desc())
+            .order_by(Device.device_number)
             .all()
         )
 
@@ -51,6 +52,7 @@ class DeviceRepository(BaseRepository[Device]):
                 self.model.microcontroller_id == microcontroller_id,
                 Microcontroller.user_id == user_id,
             )
+            .order_by(Device.device_number)
             .all()
         )
 
@@ -79,3 +81,19 @@ class DeviceRepository(BaseRepository[Device]):
             .filter(self.model.microcontroller_id == microcontroller_id)
             .scalar()
         )
+
+    def set_manual_state_for_user(
+        self,
+        *,
+        device_id: int,
+        user_id: int,
+        state: bool,
+    ) -> Device | None:
+        device = self.get_for_user_by_id(device_id, user_id)
+        if not device:
+            return None
+
+        device.manual_state = state
+        self.session.commit()
+        self.session.refresh(device)
+        return device

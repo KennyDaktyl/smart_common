@@ -36,9 +36,9 @@ class DeviceBase(APIModel):
         description="Operation mode",
         example=DeviceMode.MANUAL.value,
     )
-    provider_id: Optional[int] = Field(
+    microcontroller_id: Optional[int] = Field(
         None,
-        description="Provider for AUTO decisions",
+        description="Microcontroller id",
         example=12,
     )
     rated_power_w: Optional[float] = Field(
@@ -86,7 +86,6 @@ class DeviceResponse(ORMModel):
     id: int
     uuid: UUID
     microcontroller_id: int
-    provider_id: Optional[int]
     name: str
     device_number: int
     mode: DeviceMode
@@ -96,3 +95,13 @@ class DeviceResponse(ORMModel):
     last_state_change_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+
+class DeviceSetManualStateRequest(APIModel):
+    state: bool
+
+
+class DeviceManualStateResponse(APIModel):
+    status: str
+    message: str | None = None
+    device: DeviceResponse

@@ -19,6 +19,7 @@ class BaseRepository(Generic[ModelT]):
     """
 
     model: Type[ModelT]
+    default_order_by = None
     searchable_fields: dict[str, Any] = {}
     search_fields: dict[str, Any] = {}
 
@@ -26,7 +27,12 @@ class BaseRepository(Generic[ModelT]):
         self.session = session
 
     def _base_query(self) -> Query:
-        return self.session.query(self.model)
+        query = self.session.query(self.model)
+
+        if self.default_order_by is not None:
+            query = query.order_by(self.default_order_by)
+
+        return query
 
     def _apply_filters(
         self,

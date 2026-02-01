@@ -12,14 +12,18 @@ from smart_common.repositories.base import BaseRepository
 
 class ProviderRepository(BaseRepository[Provider]):
     model = Provider
+    default_order_by = Provider.id.asc()
 
     def list_for_user(self, user_id: int) -> list[Provider]:
-        return self.list(filters={"user_id": user_id}, order_by=Provider.id)
+        return self.list(filters={"user_id": user_id}, order_by=self.default_order_by)
 
     def get_active_providers(self) -> list[Provider]:
         query = (
             self.session.query(self.model)
-            .filter(self.model.enabled.is_(True))
+            .filter(
+                self.model.enabled.is_(True),
+            )
+            .order_by(self.default_order_by)
             .options(joinedload(self.model.credentials))
         )
         return query.all()
@@ -77,7 +81,6 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.user_id == user_id,
                 self.model.vendor == vendor,
                 self.model.external_id == external_id,
-                self.model.microcontroller_id.is_(None),
             )
             .limit(1)
         )

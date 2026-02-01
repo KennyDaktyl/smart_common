@@ -30,11 +30,6 @@ class Device(Base):
         nullable=False,
         index=True,
     )
-    provider_id: Mapped[int | None] = mapped_column(
-        ForeignKey("providers.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     device_number: Mapped[int] = mapped_column(Integer, nullable=False)
     rated_power_w: Mapped[float | None] = mapped_column(Numeric(12, 4))
     mode: Mapped[DeviceMode] = mapped_column(
@@ -66,7 +61,6 @@ class Device(Base):
         "Microcontroller",
         back_populates="devices",
     )
-    provider = relationship("Provider")
     schedules = relationship(
         "DeviceSchedule",
         back_populates="device",

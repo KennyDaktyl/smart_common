@@ -102,9 +102,6 @@ class UserRepository(BaseRepository[User]):
                     Microcontroller.devices
                 ),
                 selectinload(User.microcontrollers).selectinload(
-                    Microcontroller.sensor_providers
-                ),
-                selectinload(User.microcontrollers).selectinload(
                     Microcontroller.power_provider
                 ),
             )

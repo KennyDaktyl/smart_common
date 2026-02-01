@@ -15,6 +15,7 @@ from smart_common.enums.device import DeviceMode
 from smart_common.enums.microcontroller import MicrocontrollerType
 from smart_common.enums.sensor import SensorType
 from smart_common.enums.user import UserRole
+from smart_common.models.provider import Provider
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.device_schema import DeviceResponse
 from smart_common.schemas.provider_schema import (
@@ -145,47 +146,18 @@ class MicrocontrollerResponse(ORMModel):
     max_devices: int
     enabled: bool
 
+    power_provider_id: Optional[int]
+
     devices: List[DeviceResponse] = Field(default_factory=list)
     assigned_sensors: List[str] = Field(default_factory=list)
+    available_api_providers: List[ProviderResponse] = Field(default_factory=list)
 
     config: MicrocontrollerConfig
     created_at: datetime
     updated_at: datetime
 
     user: Optional[UserEmbeddedResponse] = None
-
-    # --------- COMPUTED FIELDS (z ORM properties) ---------
-
-    @computed_field
-    @property
-    def active_provider(self) -> Optional[ProviderResponse]:
-        return self.__dict__.get("active_provider") or self.__dict__.get(
-            "power_provider"
-        )
-
-    @computed_field
-    @property
-    def available_sensor_providers(self) -> List[ProviderResponse]:
-        return self.__dict__.get("sensor_providers") or []
-
-    @computed_field
-    @property
-    def available_api_providers(self) -> List[ProviderResponse]:
-        return []
-
-    @computed_field
-    @property
-    def user_email(self) -> Optional[str]:
-        return self.user.email if self.user else None
-
-    # --------- BACKWARD COMPAT ---------
-
-    @computed_field
-    @property
-    def sensor_providers(self) -> List[ProviderResponse]:
-        return self.available_sensor_providers
-
-    # --------- CONFIG PARSING ---------
+    power_provider: Optional[ProviderResponse] = None
 
     @field_validator("config", mode="before")
     @classmethod
@@ -206,6 +178,10 @@ class MicrocontrollerSensorsResponse(APIModel):
         description="Physical sensors wired to this microcontroller",
         example=[SensorType.DHT22.value, SensorType.BH1750.value],
     )
+
+
+class MicrocontrollerSetProviderRequest(APIModel):
+    provider_uuid: UUID | None
 
 
 # =====================================================

@@ -42,6 +42,7 @@ class PowerReadingEvent(BaseEvent):
 
 class DeviceCommandPayload(APIModel):
     device_id: int
+    mode: str
     command: str
     is_on: bool
 

@@ -8,7 +8,9 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Query, selectinload
 
 from smart_common.models.microcontroller import Microcontroller
+from smart_common.models.provider import Provider
 from smart_common.models.user import User
+from smart_common.providers.enums import ProviderType
 from smart_common.repositories.base import BaseRepository
 
 
@@ -23,6 +25,7 @@ search_fields = (
 
 class MicrocontrollerRepository(BaseRepository[Microcontroller]):
     model = Microcontroller
+    default_order_by = Microcontroller.id.asc()
 
     ADMIN_UPDATE_FIELDS = {
         "name",
@@ -41,7 +44,6 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         return [
             selectinload(Microcontroller.user),
             selectinload(Microcontroller.devices),
-            selectinload(Microcontroller.sensor_providers),
             selectinload(Microcontroller.power_provider),
             selectinload(Microcontroller.sensor_capabilities),
         ]
@@ -56,12 +58,27 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         )
 
     def get_for_user(self, user_id: int) -> List[Microcontroller]:
-        return (
+        microcontrollers = (
             self.session.query(self.model)
             .filter(self.model.user_id == user_id)
             .options(*self._full_options())
             .all()
         )
+
+        providers = (
+            self.session.query(Provider)
+            .filter(
+                Provider.user_id == user_id,
+                Provider.provider_type == ProviderType.API,
+                Provider.enabled.is_(True),
+            )
+            .all()
+        )
+
+        for mc in microcontrollers:
+            mc.__dict__["available_api_providers"] = providers
+
+        return microcontrollers
 
     def get_for_user_by_uuid(
         self, uuid: UUID, user_id: int
@@ -185,3 +202,46 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         conditions.append(self.model.name.ilike(f"%{search}%"))
 
         return query.filter(or_(*conditions))
+
+    def set_power_provider_for_user(
+        self,
+        *,
+        microcontroller_uuid: UUID,
+        user_id: int,
+        provider_uuid: UUID | None,
+    ) -> Microcontroller | None:
+        microcontroller = self.get_for_user_by_uuid(
+            uuid=microcontroller_uuid,
+            user_id=user_id,
+        )
+
+        if not microcontroller:
+            return None
+
+        if provider_uuid is None:
+            microcontroller.power_provider_id = None
+            self.session.commit()
+            self.session.refresh(microcontroller)
+            return microcontroller
+
+        provider = (
+            self.session.query(Provider)
+            .filter(
+                Provider.uuid == provider_uuid,
+                Provider.user_id == user_id,
+                Provider.enabled.is_(True),
+            )
+            .one_or_none()
+        )
+
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found or not available",
+            )
+
+        microcontroller.power_provider_id = provider.id
+
+        self.session.commit()
+        self.session.refresh(microcontroller)
+        return microcontroller

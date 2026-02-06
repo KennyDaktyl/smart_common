@@ -400,10 +400,7 @@ class DeviceService:
                 device.id,
                 state,
             )
-            return (
-                DeviceResponse.model_validate(device, from_attributes=True),
-                True,
-            )
+            return device, False
 
     # ---------------------------------------------------------------------
     # Events

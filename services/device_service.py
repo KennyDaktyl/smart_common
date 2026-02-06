@@ -391,6 +391,18 @@ class DeviceService:
     # Events
     # ---------------------------------------------------------------------
 
+    def ack_device_id(event: dict) -> int | None:
+        if "device_id" in event:
+            return event["device_id"]
+
+        data = event.get("data") or {}
+
+        if "device_id" in data:
+            return data["device_id"]
+
+        ack = data.get("ack") or {}
+        return ack.get("device_id")
+    
     async def _publish_event(
         self, microcontroller_uuid: UUID, event_type: EventType, payload
     ) -> None:
@@ -413,7 +425,7 @@ class DeviceService:
                 entity_id=str(microcontroller_uuid),
                 event_type=event_type,
                 data=payload,
-                predicate=lambda p: p.get("device_id") == payload.device_id,
+                predicate=lambda e: self.ack_device_id(e) == payload.device_id
                 timeout=10.0,
                 subject=subject,
                 ack_subject=ack_subject,

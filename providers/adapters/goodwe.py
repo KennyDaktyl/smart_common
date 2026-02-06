@@ -4,7 +4,7 @@ import json
 import logging
 
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from smart_common.enums.unit import PowerUnit
 from smart_common.providers.adapters.utils import _parse_watt
@@ -17,6 +17,7 @@ from smart_common.providers.provider_config.goodwe import goodwe_integration_set
 logger = logging.getLogger(__name__)
 
 EXTRA_ENERGY_GRID_STATUS = -1
+IMPORT_ENERGY_GRID_STATUS = 1
 
 
 class GoodWeProviderAdapter(BaseProviderAdapter):
@@ -199,35 +200,37 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         self._external_id = self._powerstation_ids[0]
         return self._powerstation_ids
 
-    def get_current_export_power(self, power_station_id: str) -> float:
+    def get_current_export_power(self, power_station_id: str) -> Optional[float]:
         data = self._post(
             "/v2/PowerStation/GetPowerflow",
             {"PowerStationId": power_station_id},
         )
 
         if not isinstance(data, dict):
-            return 0.0
+            return None
 
         powerflow = data.get("powerflow")
         if not isinstance(powerflow, dict):
-            return 0.0
+            return None
 
-        has_powerflow = data.get("hasPowerflow", False)
-        has_microgrid = data.get("hasMicroGrid", False)
+        if not data.get("hasPowerflow", False):
+            return None
 
-        load_status = powerflow.get("loadStatus")
         grid_w = _parse_watt(powerflow.get("grid"))
+        load_status = powerflow.get("loadStatus")
 
-        if (
-            has_powerflow
-            and not has_microgrid
-            and load_status == EXTRA_ENERGY_GRID_STATUS
-        ):
-            return grid_w
+        if load_status == EXTRA_ENERGY_GRID_STATUS:
+            # eksport → wartość ujemna
+            return -abs(grid_w)
 
-        return 0.0
+        if load_status == IMPORT_ENERGY_GRID_STATUS:
+            # pobór → wartość dodatnia
+            return abs(grid_w)
 
-    def get_current_power(self, device_id: str) -> float:
+        # status nieznany
+        return None
+
+    def get_current_power(self, device_id: str) -> Optional[float]:
         return self.get_current_export_power(device_id)
 
     def fetch_measurement(self) -> NormalizedMeasurement:

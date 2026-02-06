@@ -14,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class EventDispatcher:
-    """Helper that enforces the canonical event envelope for NATS messages."""
+    """
+    Helper that enforces the canonical event envelope for NATS messages.
+
+    IMPORTANT:
+    - ack_subject MUST be included in payload
+    - backend waits on this subject explicitly
+    """
 
     def __init__(self, publisher: Any, *, default_source: str | None = None):
         self.publisher = publisher
@@ -52,6 +58,14 @@ class EventDispatcher:
             source=source or self.default_source,
         )
 
+        logger.info(
+            "NATS PUBLISH → subject=%s event_type=%s entity_id=%s",
+            resolved_subject,
+            event_type,
+            entity_id,
+        )
+        logger.debug("NATS PAYLOAD → %s", payload)
+
         return await self.publisher.publish(
             resolved_subject,
             payload,
@@ -72,21 +86,30 @@ class EventDispatcher:
         source: str | None = None,
         context: Dict[str, Any] | None = None,
     ) -> dict:
-        """Publish an event and wait for a matching acknowledgement."""
+        """
+        Publish an event and wait for a matching acknowledgement.
 
-        logger.info("Publish an event and wait for a matching acknowledgement.")
+        Contract:
+        - Event payload MUST contain `ack_subject`
+        - Agent publishes ACK to that subject
+        """
+
+        logger.info("Publish event and wait for ACK")
 
         resolved_subject = subject or subject_for_entity(entity_id)
         resolved_ack = ack_subject or ack_subject_for_entity(entity_id)
 
         payload = build_event_payload(
-            event_type=self._event_type_value(event_type),
             subject=resolved_subject,
+            event_type=self._event_type_value(event_type),
             entity_type=entity_type,
             entity_id=entity_id,
             data=self._serialize_data(data),
             source=source or self.default_source,
         )
+
+        # 🔥 KLUCZOWA POPRAWKA — ACK SUBJECT W KONTRAKCIE
+        payload["ack_subject"] = resolved_ack
 
         logger.info(
             "NATS PUBLISH → subject=%s ack_subject=%s event_type=%s entity_id=%s",
@@ -105,6 +128,7 @@ class EventDispatcher:
                 predicate=predicate,
                 timeout=timeout,
             )
+
             logger.info("NATS ACK RECEIVED → %s", result)
             return result
 

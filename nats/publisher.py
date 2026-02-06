@@ -177,7 +177,7 @@ class NatsPublisher:
         ack_subject: str,
         message: Dict[str, Any],
         predicate: Callable[[Dict[str, Any]], bool],
-        timeout: float = 3.0,
+        timeout: float = 10.0,
     ) -> Dict[str, Any]:
         await self.client.ensure_connected()
 

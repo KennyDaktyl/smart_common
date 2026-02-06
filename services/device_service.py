@@ -402,7 +402,7 @@ class DeviceService:
 
         ack = data.get("ack") or {}
         return ack.get("device_id")
-    
+
     async def _publish_event(
         self, microcontroller_uuid: UUID, event_type: EventType, payload
     ) -> None:
@@ -425,7 +425,7 @@ class DeviceService:
                 entity_id=str(microcontroller_uuid),
                 event_type=event_type,
                 data=payload,
-                predicate=lambda e: self.ack_device_id(e) == payload.device_id
+                predicate=lambda e: self.ack_device_id(e) == payload.device_id,
                 timeout=10.0,
                 subject=subject,
                 ack_subject=ack_subject,

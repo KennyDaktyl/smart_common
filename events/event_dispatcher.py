@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Callable, Dict, Union
 
 from pydantic import BaseModel
@@ -8,6 +9,8 @@ from smart_common.nats.event_helpers import (
     build_event_payload,
     subject_for_entity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class EventDispatcher:
@@ -70,8 +73,12 @@ class EventDispatcher:
         context: Dict[str, Any] | None = None,
     ) -> dict:
         """Publish an event and wait for a matching acknowledgement."""
+
+        logger.info("Publish an event and wait for a matching acknowledgement.")
+
         resolved_subject = subject or subject_for_entity(entity_id)
         resolved_ack = ack_subject or ack_subject_for_entity(entity_id)
+
         payload = build_event_payload(
             event_type=self._event_type_value(event_type),
             subject=resolved_subject,
@@ -80,10 +87,27 @@ class EventDispatcher:
             data=self._serialize_data(data),
             source=source or self.default_source,
         )
-        return await self.publisher.publish_and_wait_for_ack(
-            subject=resolved_subject,
-            ack_subject=resolved_ack,
-            message=payload,
-            predicate=predicate,
-            timeout=timeout,
+
+        logger.info(
+            "NATS PUBLISH → subject=%s ack_subject=%s event_type=%s entity_id=%s",
+            resolved_subject,
+            resolved_ack,
+            event_type,
+            entity_id,
         )
+        logger.debug("NATS PAYLOAD → %s", payload)
+
+        try:
+            result = await self.publisher.publish_and_wait_for_ack(
+                subject=resolved_subject,
+                ack_subject=resolved_ack,
+                message=payload,
+                predicate=predicate,
+                timeout=timeout,
+            )
+            logger.info("NATS ACK RECEIVED → %s", result)
+            return result
+
+        except Exception:
+            logger.exception("NATS ACK TIMEOUT / ERROR")
+            raise

@@ -362,6 +362,7 @@ class DeviceService:
     ) -> tuple[DeviceResponse, bool]:
 
         device = self.get_device(db, device_id, user_id)
+        device_dto = DeviceResponse.model_validate(device, from_attributes=True)
 
         try:
             async with transactional_session(db):
@@ -379,12 +380,15 @@ class DeviceService:
                         is_on=state,
                     ),
                 )
-
                 device_dto = DeviceResponse.model_validate(device, from_attributes=True)
-
             return device_dto, True
 
-        except HTTPException:
+        except HTTPException as exc:
+            self.logger.warning(
+                "SET MANUAL STATE – ACK FAILED | device_id=%s | %s",
+                device_id,
+                exc,
+            )
             return device_dto, False
 
     # ---------------------------------------------------------------------

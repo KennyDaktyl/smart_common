@@ -374,33 +374,27 @@ class DeviceService:
                 device.mode = "MANUAL"
                 device.manual_state = state
 
-                await self._publish_event(
-                    microcontroller_uuid=device.microcontroller.uuid,
-                    event_type=EventType.DEVICE_COMMAND,
-                    payload=DeviceCommandPayload(
-                        device_id=device.id,
-                        command="SET_STATE",
-                        mode="MANUAL",
-                        is_on=state,
-                    ),
-                )
+                await self._publish_event(...)
 
                 device.last_state_change_at = datetime.now(timezone.utc)
 
+                device_dto = DeviceResponse.model_validate(device, from_attributes=True)
+                device_id_value = device.id
+
             self.logger.info(
                 "SET MANUAL STATE ACK | device_id=%s state=%s",
-                device.id,
+                device_id_value,
                 state,
             )
-            return device, True
+            return device_dto, True
 
         except HTTPException:
             self.logger.warning(
                 "SET MANUAL STATE NO ACK | device_id=%s state=%s",
-                device.id,
+                device_id,
                 state,
             )
-            return device, False
+            return device_dto, False
 
     # ---------------------------------------------------------------------
     # Events

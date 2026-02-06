@@ -221,11 +221,11 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
         if load_status == EXTRA_ENERGY_GRID_STATUS:
             # eksport → wartość ujemna
-            return -abs(grid_w)
+            return float(grid_w)
 
         if load_status == IMPORT_ENERGY_GRID_STATUS:
             # pobór → wartość dodatnia
-            return abs(grid_w)
+            return -float(grid_w)
 
         # status nieznany
         return None

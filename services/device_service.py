@@ -391,17 +391,19 @@ class DeviceService:
     # Events
     # ---------------------------------------------------------------------
 
-    def ack_device_id(event: dict) -> int | None:
-        if "device_id" in event:
-            return event["device_id"]
+    def ack_device_id(self, event: dict) -> int | None:
+        self.logger.warning("RAW ACK EVENT: %s", event)
 
         data = event.get("data") or {}
 
-        if "device_id" in data:
+        if isinstance(data, dict) and "device_id" in data:
             return data["device_id"]
 
-        ack = data.get("ack") or {}
-        return ack.get("device_id")
+        ack = data.get("ack")
+        if isinstance(ack, dict) and "device_id" in ack:
+            return ack["device_id"]
+
+        return None
 
     async def _publish_event(
         self, microcontroller_uuid: UUID, event_type: EventType, payload

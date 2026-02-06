@@ -23,7 +23,9 @@ class EventDispatcher:
         return dict(data)
 
     def _event_type_value(self, event_type: Union[EventType, str]) -> str:
-        return event_type.value if isinstance(event_type, EventType) else str(event_type)
+        return (
+            event_type.value if isinstance(event_type, EventType) else str(event_type)
+        )
 
     async def publish_event(
         self,
@@ -36,15 +38,17 @@ class EventDispatcher:
         source: str | None = None,
         context: Dict[str, Any] | None = None,
     ):
-        """Publish a single event without waiting for acknowledgements."""
+        resolved_subject = subject or subject_for_entity(entity_id)
+
         payload = build_event_payload(
+            subject=resolved_subject,
             event_type=self._event_type_value(event_type),
             entity_type=entity_type,
             entity_id=entity_id,
             data=self._serialize_data(data),
             source=source or self.default_source,
         )
-        resolved_subject = subject or subject_for_entity(entity_id)
+
         return await self.publisher.publish(
             resolved_subject,
             payload,
@@ -70,6 +74,7 @@ class EventDispatcher:
         resolved_ack = ack_subject or ack_subject_for_entity(entity_id)
         payload = build_event_payload(
             event_type=self._event_type_value(event_type),
+            subject=resolved_subject,
             entity_type=entity_type,
             entity_id=entity_id,
             data=self._serialize_data(data),

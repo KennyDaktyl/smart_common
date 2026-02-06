@@ -25,7 +25,7 @@ from smart_common.nats.event_helpers import ack_subject_for_entity, subject_for_
 from smart_common.nats.publisher import NatsPublisher
 from smart_common.repositories.device import DeviceRepository
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
-from smart_common.schemas.device_schema import DeviceListQuery
+from smart_common.schemas.device_schema import DeviceListQuery, DeviceResponse
 
 logger = logging.getLogger(__name__)
 
@@ -369,12 +369,11 @@ class DeviceService:
 
         device = self.get_device(db, device_id, user_id)
 
-        async with transactional_session(db):
-            device.mode = "MANUAL"
-            device.manual_state = state
-            db.commit()
+        try:
+            async with transactional_session(db):
+                device.mode = "MANUAL"
+                device.manual_state = state
 
-            try:
                 await self._publish_event(
                     microcontroller_uuid=device.microcontroller.uuid,
                     event_type=EventType.DEVICE_COMMAND,
@@ -387,20 +386,24 @@ class DeviceService:
                 )
 
                 device.last_state_change_at = datetime.now(timezone.utc)
-                self.logger.info(
-                    "SET MANUAL STATE ACK | device_id=%s state=%s",
-                    device.id,
-                    state,
-                )
-                return device, True
 
-            except HTTPException:
-                self.logger.warning(
-                    "SET MANUAL STATE NO ACK | device_id=%s state=%s",
-                    device.id,
-                    state,
-                )
-                return device, False
+            self.logger.info(
+                "SET MANUAL STATE ACK | device_id=%s state=%s",
+                device.id,
+                state,
+            )
+            return device, True
+
+        except HTTPException:
+            self.logger.warning(
+                "SET MANUAL STATE NO ACK | device_id=%s state=%s",
+                device.id,
+                state,
+            )
+            return (
+                DeviceResponse.model_validate(device, from_attributes=True),
+                True,
+            )
 
     # ---------------------------------------------------------------------
     # Events

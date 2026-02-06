@@ -1,7 +1,6 @@
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+from typing import Any, List, Dict, Optional
 
 
 class ProviderMeasurementResponse(BaseModel):
@@ -14,9 +13,18 @@ class ProviderMeasurementResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProviderMeasurementSeriesOut(BaseModel):
-    measurements: list[ProviderMeasurementResponse]
+class HourlyEnergyPoint(BaseModel):
+    hour: datetime
+    energy_wh: float
 
 
-class ProviderMeasurementSeriesOut(BaseModel):
-    days: Dict[str, List[ProviderMeasurementResponse]]
+class DayEnergyOut(BaseModel):
+    date: str
+    total_energy_wh: float
+    import_wh: float
+    export_wh: float
+    hours: List[HourlyEnergyPoint]
+
+
+class ProviderEnergySeriesOut(BaseModel):
+    days: Dict[str, DayEnergyOut]

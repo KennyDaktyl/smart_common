@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 from typing import Iterable
 
@@ -132,24 +132,25 @@ class MeasurementRepository:
             return last_entry.measured_value is None and measurement.value is None
         return float(last_entry.measured_value) == measurement.value
 
-    def list_for_provider(
+    def list_hourly_energy(
         self,
         *,
         provider_id: int,
         date_start: datetime,
         date_end: datetime,
-        limit: int,
-    ) -> list[ProviderMeasurement]:
+    ):
         return (
-            self.session.query(ProviderMeasurement)
-            .filter(
-                and_(
-                    ProviderMeasurement.provider_id == provider_id,
-                    ProviderMeasurement.measured_at >= date_start,
-                    ProviderMeasurement.measured_at <= date_end,
-                )
+            self.session.query(
+                func.date_trunc("hour", ProviderMeasurement.measured_at).label("hour"),
+                func.avg(ProviderMeasurement.measured_value).label("avg_power_w"),
             )
-            .order_by(ProviderMeasurement.measured_at.asc())
-            .limit(limit)
+            .filter(
+                ProviderMeasurement.provider_id == provider_id,
+                ProviderMeasurement.measured_at >= date_start,
+                ProviderMeasurement.measured_at <= date_end,
+                ProviderMeasurement.measured_value.isnot(None),
+            )
+            .group_by("hour")
+            .order_by("hour")
             .all()
         )

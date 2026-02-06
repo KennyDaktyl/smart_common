@@ -38,8 +38,7 @@ class DeviceEventRepository(BaseRepository[DeviceEvent]):
             created_at=created_at or datetime.now(timezone.utc),
         )
         self.session.add(event)
-        self.session.commit()
-        self.session.refresh(event)
+        self.session.flush()
         return event
 
     def list_for_device(

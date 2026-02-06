@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from smart_common.enums.device_event import DeviceEventType
@@ -59,16 +59,21 @@ class DeviceEventService:
             event_type=event_type,
         )
 
-        schema_events = [DeviceEventOut.model_validate(e) for e in events]
+        schema_events = [
+            DeviceEventOut.model_validate(e, from_attributes=True) for e in events
+        ]
 
         rated_power_kw = (
-            float(device.rated_power_w) / 1000 if device.rated_power_w else None
+            float(device.rated_power_w) / 1000
+            if device.rated_power_w is not None
+            else None
         )
 
         total_seconds_on = 0.0
         energy_kwh = 0.0
 
         for idx, event in enumerate(schema_events):
+
             current_ts = event.created_at
             next_ts = (
                 schema_events[idx + 1].created_at
@@ -79,16 +84,18 @@ class DeviceEventService:
             if event.pin_state:
                 seconds = max(0, (next_ts - current_ts).total_seconds())
                 total_seconds_on += seconds
+
                 power_kw = (
                     rated_power_kw
                     if rated_power_kw is not None
                     else (event.measured_value or 0.0)
                 )
+
                 energy_kwh += power_kw * (seconds / 3600)
 
         return {
             "events": schema_events,
             "total_minutes_on": int(total_seconds_on // 60),
-            "energy_kwh": round(energy_kwh, 3) if energy_kwh else None,
+            "energy_kwh": round(energy_kwh, 3) if energy_kwh > 0 else None,
             "rated_power_kw": rated_power_kw,
         }

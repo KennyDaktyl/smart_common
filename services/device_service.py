@@ -359,13 +359,7 @@ class DeviceService:
         user_id: int,
         device_id: int,
         state: bool,
-    ) -> tuple[Device, bool]:
-        self.logger.info(
-            "SET MANUAL STATE | device_id=%s user_id=%s state=%s",
-            device_id,
-            user_id,
-            state,
-        )
+    ) -> tuple[DeviceResponse, bool]:
 
         device = self.get_device(db, device_id, user_id)
 
@@ -373,6 +367,7 @@ class DeviceService:
             async with transactional_session(db):
                 device.mode = "MANUAL"
                 device.manual_state = state
+                device.last_state_change_at = datetime.now(timezone.utc)
 
                 await self._publish_event(
                     microcontroller_uuid=device.microcontroller.uuid,
@@ -385,23 +380,11 @@ class DeviceService:
                     ),
                 )
 
-                device.last_state_change_at = datetime.now(timezone.utc)
                 device_dto = DeviceResponse.model_validate(device, from_attributes=True)
-                device_id_value = device.id
 
-            self.logger.info(
-                "SET MANUAL STATE ACK | device_id=%s state=%s",
-                device_id_value,
-                state,
-            )
-            return device_dto, False
+            return device_dto, True
 
         except HTTPException:
-            self.logger.warning(
-                "SET MANUAL STATE NO ACK | device_id=%s state=%s",
-                device_id,
-                state,
-            )
             return device_dto, False
 
     # ---------------------------------------------------------------------

@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import case, func, select, text
+from sqlalchemy.sql import over
 from sqlalchemy.orm import Session
 from typing import Iterable
 
@@ -139,18 +140,48 @@ class MeasurementRepository:
         date_start: datetime,
         date_end: datetime,
     ):
-        return (
-            self.session.query(
-                func.date_trunc("hour", ProviderMeasurement.measured_at).label("hour"),
-                func.avg(ProviderMeasurement.measured_value).label("avg_power_w"),
-            )
-            .filter(
-                ProviderMeasurement.provider_id == provider_id,
-                ProviderMeasurement.measured_at >= date_start,
-                ProviderMeasurement.measured_at <= date_end,
-                ProviderMeasurement.measured_value.isnot(None),
-            )
-            .group_by("hour")
-            .order_by("hour")
-            .all()
+        m = ProviderMeasurement
+
+        # ---------- SUBQUERY: liczymy energię cząstkową ----------
+        next_ts = over(
+            func.lead(m.measured_at),
+            partition_by=m.provider_id,
+            order_by=m.measured_at,
         )
+
+        hour_end = func.date_trunc("hour", m.measured_at) + text("INTERVAL '1 hour'")
+
+        effective_end = func.least(
+            func.coalesce(next_ts, date_end),
+            hour_end,
+        )
+
+        duration_hours = func.extract("epoch", effective_end - m.measured_at) / 3600.0
+
+        energy_provder_unit_h = m.measured_value * duration_hours
+
+        base_q = (
+            select(
+                func.date_trunc("hour", m.measured_at).label("hour"),
+                energy_provder_unit_h.label("energy"),
+            )
+            .where(
+                m.provider_id == provider_id,
+                m.measured_at >= date_start,
+                m.measured_at < date_end,
+                m.measured_value.isnot(None),
+            )
+            .subquery()
+        )
+
+        # ---------- FINAL QUERY: agregacja ----------
+        stmt = (
+            select(
+                base_q.c.hour,
+                func.sum(base_q.c.energy).label("energy"),
+            )
+            .group_by(base_q.c.hour)
+            .order_by(base_q.c.hour)
+        )
+
+        return self.session.execute(stmt).all()

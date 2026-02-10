@@ -15,16 +15,17 @@ class ProviderMeasurementResponse(BaseModel):
 
 class HourlyEnergyPoint(BaseModel):
     hour: datetime
-    energy_wh: float
+    energy: float
 
 
 class DayEnergyOut(BaseModel):
     date: str
-    total_energy_wh: float
-    import_wh: float
-    export_wh: float
+    total_energy: float
+    import_energy: float
+    export_energy: float
     hours: List[HourlyEnergyPoint]
 
 
 class ProviderEnergySeriesOut(BaseModel):
+    unit: str
     days: Dict[str, DayEnergyOut]

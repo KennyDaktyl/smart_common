@@ -132,17 +132,17 @@ class MeasurementRepository:
             return last_entry.measured_value is None and measurement.value is None
         return float(last_entry.measured_value) == measurement.value
 
-    def list_hourly_energy(
+    def list_power_samples(
         self,
         *,
         provider_id: int,
         date_start: datetime,
         date_end: datetime,
-    ):
+    ) -> list[tuple[datetime, float]]:
         return (
             self.session.query(
-                func.date_trunc("hour", ProviderMeasurement.measured_at).label("hour"),
-                func.avg(ProviderMeasurement.measured_value).label("avg_power_w"),
+                ProviderMeasurement.measured_at,
+                ProviderMeasurement.measured_value,
             )
             .filter(
                 ProviderMeasurement.provider_id == provider_id,
@@ -150,7 +150,6 @@ class MeasurementRepository:
                 ProviderMeasurement.measured_at <= date_end,
                 ProviderMeasurement.measured_value.isnot(None),
             )
-            .group_by("hour")
-            .order_by("hour")
+            .order_by(ProviderMeasurement.measured_at)
             .all()
         )

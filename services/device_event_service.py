@@ -34,6 +34,11 @@ class DeviceEventService:
             raise HTTPException(status_code=404, detail="Device not found")
         return device
 
+    def _to_utc_aware(self, dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     def list_device_events(
         self,
         *,
@@ -48,8 +53,13 @@ class DeviceEventService:
         device = self._get_device(db, user_id, device_id)
 
         now = datetime.now(timezone.utc)
-        start = date_start or now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = date_end or now
+
+        start = (
+            self._to_utc_aware(date_start)
+            if date_start
+            else now.replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+        end = self._to_utc_aware(date_end) if date_end else now
 
         events = self._event_repo(db).list_for_device(
             device_id=device.id,
@@ -73,10 +83,10 @@ class DeviceEventService:
         energy_kwh = 0.0
 
         for idx, event in enumerate(schema_events):
+            current_ts = self._to_utc_aware(event.created_at)
 
-            current_ts = event.created_at
             next_ts = (
-                schema_events[idx + 1].created_at
+                self._to_utc_aware(schema_events[idx + 1].created_at)
                 if idx + 1 < len(schema_events)
                 else end
             )

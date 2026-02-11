@@ -38,7 +38,6 @@ class DeviceEventRepository(BaseRepository[DeviceEvent]):
             created_at=created_at or datetime.now(timezone.utc),
         )
         self.session.add(event)
-        # self.session.flush()
         self.session.commit()
         self.session.refresh(event)
         return event

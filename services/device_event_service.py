@@ -1,3 +1,4 @@
+from decimal import Decimal
 import logging
 from datetime import datetime, timezone
 from typing import Callable
@@ -50,8 +51,8 @@ class DeviceEventService:
         date_end: datetime | None,
         event_type: DeviceEventType | None = None,
     ) -> dict:
-        device = self._get_device(db, user_id, device_id)
 
+        device = self._get_device(db, user_id, device_id)
         now = datetime.now(timezone.utc)
 
         start = (
@@ -73,39 +74,38 @@ class DeviceEventService:
             DeviceEventOut.model_validate(e, from_attributes=True) for e in events
         ]
 
-        rated_power_kw = (
-            float(device.rated_power_w) / 1000
-            if device.rated_power_w is not None
-            else None
-        )
-
         total_seconds_on = 0.0
-        energy_kwh = 0.0
+        energy = Decimal("0")
 
-        for idx, event in enumerate(schema_events):
-            current_ts = self._to_utc_aware(event.created_at)
+        if device.rated_power_w is None:
+            energy_unit = None
+        else:
+            rated_power = Decimal(device.rated_power_w)  # zakładamy że to kW
+            energy_unit = "kWh"
 
-            next_ts = (
-                self._to_utc_aware(schema_events[idx + 1].created_at)
-                if idx + 1 < len(schema_events)
-                else end
-            )
+            for idx, event in enumerate(schema_events):
+                current_ts = self._to_utc_aware(event.created_at)
 
-            if event.pin_state:
-                seconds = max(0, (next_ts - current_ts).total_seconds())
-                total_seconds_on += seconds
-
-                power_kw = (
-                    rated_power_kw
-                    if rated_power_kw is not None
-                    else (event.measured_value or 0.0)
+                next_ts = (
+                    self._to_utc_aware(schema_events[idx + 1].created_at)
+                    if idx + 1 < len(schema_events)
+                    else end
                 )
 
-                energy_kwh += power_kw * (seconds / 3600)
+                if event.pin_state:
+                    seconds = max(0, (next_ts - current_ts).total_seconds())
+                    total_seconds_on += seconds
+
+                    hours = Decimal(str(seconds)) / Decimal("3600")
+                    energy += rated_power * hours
 
         return {
             "events": schema_events,
             "total_minutes_on": int(total_seconds_on // 60),
-            "energy_kwh": round(energy_kwh, 3) if energy_kwh > 0 else None,
-            "rated_power_kw": rated_power_kw,
+            "energy": round(float(energy), 3) if energy > 0 else None,
+            "energy_unit": energy_unit,
+            "power_unit": "kW" if device.rated_power_w else None,
+            "rated_power": (
+                float(device.rated_power_w) if device.rated_power_w else None
+            ),
         }

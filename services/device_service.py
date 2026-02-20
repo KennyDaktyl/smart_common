@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
@@ -86,8 +86,8 @@ class DeviceService:
     ) -> None:
         if device.microcontroller_id != microcontroller_id:
             self.logger.warning(
-                "Device does not belong to microcontroller | device_id=%s mc_id=%s",
-                device.id,
+                "Device does not belong to microcontroller | device_number=%s mc_id=%s",
+                device.device_number,
                 microcontroller_id,
             )
             raise HTTPException(
@@ -264,7 +264,7 @@ class DeviceService:
                     device_id=device.id,
                     device_number=device.device_number,
                     mode=device.mode.value,
-                    threshold_kw=device.threshold_value,
+                    power_threshold=device.threshold_value,
                 ),
             )
 
@@ -311,6 +311,7 @@ class DeviceService:
                 event_type=EventType.DEVICE_UPDATED,
                 payload=DeviceUpdatedPayload(
                     device_id=updated.id,
+                    device_number=updated.device_number,
                     mode=updated.mode.value,
                     threshold_kw=updated.threshold_value,
                 ),
@@ -342,7 +343,9 @@ class DeviceService:
             await self._publish_event(
                 microcontroller_uuid=device.microcontroller.uuid,
                 event_type=EventType.DEVICE_DELETED,
-                payload=DeviceDeletePayload(device_id=device.id),
+                payload=DeviceDeletePayload(
+                    device_id=device_id, device_number=device.device_number
+                ),
             )
 
             self._repo(db).delete(device)
@@ -374,7 +377,8 @@ class DeviceService:
                     microcontroller_uuid=device.microcontroller.uuid,
                     event_type=EventType.DEVICE_COMMAND,
                     payload=DeviceCommandPayload(
-                        device_id=device.id,
+                        device_id=device_id,
+                        device_number=device.device_number,
                         command="SET_STATE",
                         mode="MANUAL",
                         is_on=state,
@@ -412,9 +416,9 @@ class DeviceService:
     async def _publish_event(
         self, microcontroller_uuid: UUID, event_type: EventType, payload
     ) -> None:
-        subject = subject_for_entity(microcontroller_uuid)
+        subject = subject_for_entity(microcontroller_uuid, event_type.value)
         self.logger.info("Subject: %s", subject)
-        ack_subject = ack_subject_for_entity(microcontroller_uuid)
+        ack_subject = ack_subject_for_entity(microcontroller_uuid, event_type.value)
         self.logger.info("Subject ACK: %s", ack_subject)
         self.logger.debug(
             "PUBLISH event | type=%s mc_uuid=%s subject=%s ack_subject=%s payload=%s",
@@ -426,8 +430,8 @@ class DeviceService:
         )
 
         try:
-            await self.events.publish_event_and_wait_for_ack(
-                entity_type="microcontroller",
+            result = await self.events.publish_event_and_wait_for_ack(
+                entity_type=event_type.value,
                 entity_id=str(microcontroller_uuid),
                 event_type=event_type,
                 data=payload,
@@ -436,6 +440,13 @@ class DeviceService:
                 subject=subject,
                 ack_subject=ack_subject,
             )
+
+            ack_data = result.get("data") or {}
+            if not ack_data.get("ok", False):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Agent rejected {event_type.value} event",
+                )
 
             self.logger.debug(
                 "EVENT ACK received | type=%s mc_uuid=%s device_id=%s",

@@ -1,6 +1,6 @@
-from decimal import Decimal
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Callable
 
 from fastapi import HTTPException
@@ -77,10 +77,10 @@ class DeviceEventService:
         total_seconds_on = 0.0
         energy = Decimal("0")
 
-        if device.rated_power_w is None:
+        if device.rated_power is None:
             energy_unit = None
         else:
-            rated_power = Decimal(device.rated_power_w)  # zakładamy że to kW
+            rated_power = Decimal(device.rated_power)  # zakładamy że to kW
             energy_unit = "kWh"
 
             for idx, event in enumerate(schema_events):
@@ -104,8 +104,6 @@ class DeviceEventService:
             "total_minutes_on": int(total_seconds_on // 60),
             "energy": round(float(energy), 3) if energy > 0 else None,
             "energy_unit": energy_unit,
-            "power_unit": "kW" if device.rated_power_w else None,
-            "rated_power": (
-                float(device.rated_power_w) if device.rated_power_w else None
-            ),
+            "power_unit": "kW" if device.rated_power else None,
+            "rated_power": (float(device.rated_power) if device.rated_power else None),
         }

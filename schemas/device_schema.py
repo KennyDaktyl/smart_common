@@ -41,7 +41,7 @@ class DeviceBase(APIModel):
         description="Microcontroller id",
         example=12,
     )
-    rated_power_w: Optional[float] = Field(
+    rated_power: Optional[float] = Field(
         None,
         gt=0,
         description="Declared device power in watts",
@@ -69,7 +69,7 @@ class DeviceUpdateRequest(APIModel):
     device_number: Optional[int] = Field(None, ge=0)
     mode: Optional[DeviceMode] = None
     provider_id: Optional[int] = None
-    rated_power_w: Optional[float] = Field(None, gt=0)
+    rated_power: Optional[float] = Field(None, gt=0)
     manual_state: Optional[bool] = None
     threshold_value: Optional[float] = None
 
@@ -89,7 +89,7 @@ class DeviceResponse(ORMModel):
     name: str
     device_number: int
     mode: DeviceMode
-    rated_power_w: Optional[float]
+    rated_power: Optional[float]
     threshold_value: Optional[float]
     manual_state: Optional[bool]
     last_state_change_at: Optional[datetime]

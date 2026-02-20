@@ -12,8 +12,8 @@ class DeviceCreatedPayload(APIModel):
     device_id: int
     device_number: int
     mode: str
-    threshold_kw: Optional[float] = None
-    inverter_serial: Optional[str] = None
+    power_threshold: Optional[float] = None
+    microcontroller_uuid: Optional[str] = None
 
 
 class DeviceCreatedEvent(BaseEvent):
@@ -21,6 +21,7 @@ class DeviceCreatedEvent(BaseEvent):
 
 
 class DeviceUpdatedPayload(APIModel):
+    device_number: int
     device_id: int
     mode: str
     threshold_kw: Optional[float] = None
@@ -42,6 +43,7 @@ class PowerReadingEvent(BaseEvent):
 
 class DeviceCommandPayload(APIModel):
     device_id: int
+    device_number: int
     mode: str
     command: str
     is_on: bool
@@ -70,8 +72,5 @@ class DeviceEventUnion(BaseEvent):
 
 
 class DeviceDeletePayload(APIModel):
+    device_number: int
     device_id: int
-
-
-class DeviceDeletedEvent(BaseEvent):
-    payload: DeviceDeletePayload

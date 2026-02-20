@@ -31,7 +31,7 @@ class Device(Base):
         index=True,
     )
     device_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    rated_power_w: Mapped[float | None] = mapped_column(Numeric(12, 4))
+    rated_power: Mapped[float | None] = mapped_column(Numeric(12, 4))
     mode: Mapped[DeviceMode] = mapped_column(
         Enum(DeviceMode, name="device_mode_enum"),
         default=DeviceMode.MANUAL,

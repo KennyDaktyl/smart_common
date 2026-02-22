@@ -1,14 +1,24 @@
 import logging
 from datetime import timedelta
 
+from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from app.tasks.email_tasks import send_confirmation_email_task, send_password_reset_email_task
+from app.tasks.email_tasks import (
+    send_confirmation_email_task,
+    send_password_reset_email_task,
+)
 from smart_common.core.config import settings
-from smart_common.core.security import (TokenType, create_access_token, create_action_token,
-                                        create_refresh_token, decode_and_validate_token,
-                                        hash_password, verify_password)
+from smart_common.core.security import (
+    TokenType,
+    create_access_token,
+    create_action_token,
+    create_refresh_token,
+    decode_and_validate_token,
+    hash_password,
+    verify_password,
+)
 from smart_common.enums.user import UserRole
 from smart_common.models.user import User
 from smart_common.repositories.user import UserRepository
@@ -43,7 +53,9 @@ class AuthService:
     def refresh(self, refresh_token: str) -> tuple[str, str]:
         payload = decode_and_validate_token(refresh_token, TokenType.REFRESH)
         if not payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+            raise HTTPException(
+                status_code=401, detail="Invalid or expired refresh token"
+            )
 
         user_id = payload.get("sub")
         if not user_id:
@@ -62,9 +74,10 @@ class AuthService:
     # ------------------------------------------------------------------
 
     def register(self, payload: UserCreate) -> User:
-        logger.info("Register attempt email=%s", payload.email)
+        email = self._normalize_email_or_422(payload.email)
+        logger.info("Register attempt email=%s", email)
 
-        user = self.user_repo.get_by_email(payload.email)
+        user = self.user_repo.get_by_email(email)
 
         # --------------------------------------------------
         # USER EXISTS
@@ -73,7 +86,7 @@ class AuthService:
             if user.is_active:
                 logger.warning(
                     "Register blocked - active user exists email=%s",
-                    payload.email,
+                    email,
                 )
                 raise HTTPException(
                     status_code=400,
@@ -83,14 +96,14 @@ class AuthService:
             # user exists but inactive -> resend confirmation
             logger.info(
                 "User exists but inactive - resending confirmation email email=%s",
-                payload.email,
+                email,
             )
 
             token = create_action_token(
                 {"sub": str(user.id)},
                 expires_delta=self.EMAIL_TOKEN_EXPIRE,
             )
-            send_confirmation_email_task.delay(user.email, token)
+            self._queue_confirmation_email(user.email, token)
             return user
 
         # --------------------------------------------------
@@ -98,7 +111,7 @@ class AuthService:
         # --------------------------------------------------
         try:
             user = self.user_repo.model(
-                email=payload.email,
+                email=email,
                 password_hash=hash_password(payload.password),
                 role=UserRole.CLIENT,
                 is_active=False,
@@ -112,7 +125,7 @@ class AuthService:
                 expires_delta=self.EMAIL_TOKEN_EXPIRE,
             )
 
-            send_confirmation_email_task.delay(user.email, token)
+            self._queue_confirmation_email(user.email, token)
 
             self.user_repo.session.commit()
             logger.info("User registered id=%s email=%s", user.id, user.email)
@@ -123,18 +136,22 @@ class AuthService:
             self.user_repo.session.rollback()
             logger.warning(
                 "IntegrityError - duplicate email email=%s",
-                payload.email,
+                email,
             )
             raise HTTPException(
                 status_code=400,
                 detail="User with this email already exists",
             )
 
+        except HTTPException:
+            self.user_repo.session.rollback()
+            raise
+
         except Exception:
             self.user_repo.session.rollback()
             logger.exception(
                 "Unexpected error during registration email=%s",
-                payload.email,
+                email,
             )
             raise HTTPException(
                 status_code=500,
@@ -181,7 +198,11 @@ class AuthService:
             {"sub": str(user.id)},
             expires_delta=self.PASSWORD_RESET_EXPIRE,
         )
-        send_password_reset_email_task.delay(user.email, token)
+        try:
+            send_password_reset_email_task.delay(user.email, token)
+        except Exception:
+            logger.exception("Failed to queue password reset email for %s", user.email)
+            return
         logger.info("Password reset token generated for user id=%s", user.id)
         return token
 
@@ -214,3 +235,25 @@ class AuthService:
         )
         refresh_token = create_refresh_token({"sub": str(user.id)})
         return access_token, refresh_token
+
+    @staticmethod
+    def _normalize_email_or_422(email: str) -> str:
+        try:
+            validated = validate_email(str(email), check_deliverability=False)
+            return validated.normalized
+        except EmailNotValidError as exc:
+            logger.warning("Rejected invalid email during registration email=%s", email)
+            raise HTTPException(
+                status_code=422, detail="Invalid email address format"
+            ) from exc
+
+    @staticmethod
+    def _queue_confirmation_email(email: str, token: str) -> None:
+        try:
+            send_confirmation_email_task.delay(email, token)
+        except Exception as exc:
+            logger.exception("Failed to queue confirmation email for %s", email)
+            raise HTTPException(
+                status_code=503,
+                detail="Could not send activation email. Please try again later.",
+            ) from exc

@@ -27,9 +27,7 @@ class DeviceEventCreate(APIModel):
     created_at: Optional[datetime] = None
 
 
-class DeviceEventCreateFromAgent(APIModel):
-    device_id: Optional[int] = None
-    device_number: Optional[int] = None
+class DeviceEventCreateFromAgentBase(APIModel):
     event_type: DeviceEventType = DeviceEventType.STATE
     event_name: DeviceEventName
     device_state: Optional[str] = None
@@ -40,6 +38,15 @@ class DeviceEventCreateFromAgent(APIModel):
     trigger_reason: Optional[str] = None
     source: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class DeviceEventCreateFromAgentByUUID(DeviceEventCreateFromAgentBase):
+    pass
+
+
+class DeviceEventCreateFromAgent(DeviceEventCreateFromAgentBase):
+    device_id: Optional[int] = None
+    device_number: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_device_reference(self):

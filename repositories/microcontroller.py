@@ -61,6 +61,7 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         microcontrollers = (
             self.session.query(self.model)
             .filter(self.model.user_id == user_id)
+            .order_by(self.model.id.asc())
             .options(*self._full_options())
             .all()
         )
@@ -169,6 +170,8 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
 
         if order_by is not None:
             query = query.order_by(order_by)
+        elif self.default_order_by is not None:
+            query = query.order_by(self.default_order_by)
 
         return query.offset(offset).limit(limit).all()
 

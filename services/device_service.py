@@ -144,7 +144,7 @@ class DeviceService:
             items = repo.list(
                 limit=query.limit,
                 offset=query.offset,
-                order_by=repo.model.created_at.desc(),
+                order_by=repo.model.id.asc(),
             )
             total = repo.count()
         else:

@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone
+from datetime import date as date_type
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable
 
@@ -40,6 +41,21 @@ class DeviceEventService:
             return dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
 
+    def _resolve_day_window(
+        self,
+        *,
+        selected_date: date_type | None,
+        now: datetime,
+    ) -> tuple[datetime, datetime]:
+        day = selected_date or now.date()
+        start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+
+        if day == now.date():
+            return start, now
+
+        end = start + timedelta(days=1) - timedelta(microseconds=1)
+        return start, end
+
     def list_device_events(
         self,
         *,
@@ -47,20 +63,13 @@ class DeviceEventService:
         user_id: int,
         device_id: int,
         limit: int,
-        date_start: datetime | None,
-        date_end: datetime | None,
+        selected_date: date_type | None,
         event_type: DeviceEventType | None = None,
     ) -> dict:
 
         device = self._get_device(db, user_id, device_id)
         now = datetime.now(timezone.utc)
-
-        start = (
-            self._to_utc_aware(date_start)
-            if date_start
-            else now.replace(hour=0, minute=0, second=0, microsecond=0)
-        )
-        end = self._to_utc_aware(date_end) if date_end else now
+        start, end = self._resolve_day_window(selected_date=selected_date, now=now)
 
         events = self._event_repo(db).list_for_device(
             device_id=device.id,

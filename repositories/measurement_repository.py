@@ -156,3 +156,23 @@ class MeasurementRepository:
             .order_by(ProviderMeasurement.measured_at)
             .all()
         )
+
+    def get_last_power_sample_before(
+        self,
+        *,
+        provider_id: int,
+        before: datetime,
+    ) -> tuple[datetime, float] | None:
+        return (
+            self.session.query(
+                ProviderMeasurement.measured_at,
+                ProviderMeasurement.measured_value,
+            )
+            .filter(
+                ProviderMeasurement.provider_id == provider_id,
+                ProviderMeasurement.measured_at < before,
+                ProviderMeasurement.measured_value.isnot(None),
+            )
+            .order_by(ProviderMeasurement.measured_at.desc())
+            .first()
+        )

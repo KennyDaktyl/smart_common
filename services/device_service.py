@@ -250,6 +250,16 @@ class DeviceService:
             data["microcontroller_id"] = microcontroller.id
 
             device = repo.create(data)
+            if not isinstance(device.manual_state, bool):
+                device.manual_state = False
+            self._sync_device_config_state(
+                device,
+                is_on=(
+                    device.manual_state
+                    if isinstance(device.manual_state, bool)
+                    else None
+                ),
+            )
 
             self.logger.info(
                 "Device CREATED | device_id=%s mc_uuid=%s",
@@ -257,16 +267,25 @@ class DeviceService:
                 microcontroller.uuid,
             )
 
-            await self._publish_event(
+            ack_data = await self._publish_event(
                 microcontroller_uuid=microcontroller.uuid,
                 event_type=EventType.DEVICE_CREATED,
                 payload=DeviceCreatedPayload(
                     device_id=device.id,
+                    device_uuid=str(device.uuid),
                     device_number=device.device_number,
                     mode=device.mode.value,
-                    power_threshold=device.threshold_value,
+                    rated_power=device.rated_power,
+                    threshold_value=device.threshold_value,
+                    microcontroller_uuid=str(microcontroller.uuid),
                 ),
             )
+
+            ack_state = self.ack_device_state(ack_data)
+            if ack_state is not None:
+                device.manual_state = ack_state
+                device.last_state_change_at = datetime.now(timezone.utc)
+                self._sync_device_config_state(device, is_on=ack_state)
 
             return device
 
@@ -300,6 +319,14 @@ class DeviceService:
                 )
 
             updated = self._repo(db).update_for_user(device_id, user_id, payload)
+            self._sync_device_config_state(
+                updated,
+                is_on=(
+                    updated.manual_state
+                    if isinstance(updated.manual_state, bool)
+                    else None
+                ),
+            )
 
             self.logger.info(
                 "Device UPDATED | device_id=%s",
@@ -311,6 +338,7 @@ class DeviceService:
                 event_type=EventType.DEVICE_UPDATED,
                 payload=DeviceUpdatedPayload(
                     device_id=updated.id,
+                    device_uuid=str(updated.uuid),
                     device_number=updated.device_number,
                     mode=updated.mode.value,
                     threshold_kw=updated.threshold_value,
@@ -344,7 +372,9 @@ class DeviceService:
                 microcontroller_uuid=device.microcontroller.uuid,
                 event_type=EventType.DEVICE_DELETED,
                 payload=DeviceDeletePayload(
-                    device_id=device_id, device_number=device.device_number
+                    device_id=device_id,
+                    device_uuid=str(device.uuid),
+                    device_number=device.device_number,
                 ),
             )
 
@@ -369,21 +399,30 @@ class DeviceService:
 
         try:
             async with transactional_session(db):
-                device.mode = "MANUAL"
+                device.mode = DeviceMode.MANUAL
                 device.manual_state = state
                 device.last_state_change_at = datetime.now(timezone.utc)
 
-                await self._publish_event(
+                ack_data = await self._publish_event(
                     microcontroller_uuid=device.microcontroller.uuid,
                     event_type=EventType.DEVICE_COMMAND,
                     payload=DeviceCommandPayload(
                         device_id=device_id,
+                        device_uuid=str(device.uuid),
                         device_number=device.device_number,
                         command="SET_STATE",
                         mode="MANUAL",
                         is_on=state,
                     ),
                 )
+
+                ack_state = self.ack_device_state(ack_data)
+                if ack_state is not None:
+                    device.manual_state = ack_state
+
+                if isinstance(device.manual_state, bool):
+                    self._sync_device_config_state(device, is_on=device.manual_state)
+
                 device_dto = DeviceResponse.model_validate(device, from_attributes=True)
             return device_dto, True
 
@@ -413,9 +452,109 @@ class DeviceService:
 
         return None
 
+    def ack_device_state(self, ack_data: dict) -> bool | None:
+        if not isinstance(ack_data, dict):
+            return None
+
+        sources = [ack_data]
+        nested_ack = ack_data.get("ack")
+        if isinstance(nested_ack, dict):
+            sources.insert(0, nested_ack)
+
+        for source in sources:
+            for key in ("is_on", "actual_state"):
+                value = source.get(key)
+                if isinstance(value, bool):
+                    return value
+
+        return None
+
+    def _sync_device_config_state(
+        self,
+        device: Device,
+        *,
+        is_on: bool | None,
+    ) -> None:
+        microcontroller = getattr(device, "microcontroller", None)
+        if not microcontroller:
+            return
+
+        config = dict(microcontroller.config or {})
+        raw_devices_config = config.get("devices_config")
+
+        devices_config = (
+            [dict(item) for item in raw_devices_config if isinstance(item, dict)]
+            if isinstance(raw_devices_config, list)
+            else []
+        )
+
+        updated = False
+        for item in devices_config:
+            if (
+                item.get("device_id") == device.id
+                or item.get("pin_number") == device.device_number
+            ):
+                mode_value = (
+                    device.mode.value
+                    if hasattr(device.mode, "value")
+                    else str(device.mode)
+                )
+                threshold_value = (
+                    float(device.threshold_value)
+                    if device.threshold_value is not None
+                    else None
+                )
+                rated_power = (
+                    float(device.rated_power) if device.rated_power is not None else None
+                )
+                item["device_id"] = device.id
+                item["device_uuid"] = str(device.uuid)
+                item["device_number"] = device.device_number
+                item["pin_number"] = device.device_number
+                item["mode"] = mode_value
+                item["rated_power"] = rated_power
+                item["threshold_value"] = threshold_value
+                if is_on is not None:
+                    item["is_on"] = is_on
+                elif "is_on" not in item and isinstance(device.manual_state, bool):
+                    item["is_on"] = device.manual_state
+                updated = True
+
+        if not updated:
+            mode_value = (
+                device.mode.value if hasattr(device.mode, "value") else str(device.mode)
+            )
+            threshold_value = (
+                float(device.threshold_value)
+                if device.threshold_value is not None
+                else None
+            )
+            rated_power = (
+                float(device.rated_power) if device.rated_power is not None else None
+            )
+            devices_config.append(
+                {
+                    "device_id": device.id,
+                    "device_uuid": str(device.uuid),
+                    "device_number": device.device_number,
+                    "pin_number": device.device_number,
+                    "mode": mode_value,
+                    "rated_power": rated_power,
+                    "threshold_value": threshold_value,
+                    "is_on": (
+                        is_on
+                        if is_on is not None
+                        else (device.manual_state if isinstance(device.manual_state, bool) else None)
+                    ),
+                }
+            )
+
+        config["devices_config"] = devices_config
+        microcontroller.config = config
+
     async def _publish_event(
         self, microcontroller_uuid: UUID, event_type: EventType, payload
-    ) -> None:
+    ) -> dict:
         subject = subject_for_entity(microcontroller_uuid, event_type.value)
         self.logger.info("Subject: %s", subject)
         ack_subject = ack_subject_for_entity(microcontroller_uuid, event_type.value)
@@ -454,6 +593,7 @@ class DeviceService:
                 microcontroller_uuid,
                 payload.device_id,
             )
+            return ack_data
 
         except Exception as exc:
             self.logger.error(

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from smart_common.enums.device import DeviceMode
 from smart_common.schemas.base import APIModel, ORMModel
@@ -96,6 +96,16 @@ class DeviceResponse(ORMModel):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field(return_type=UUID)
+    @property
+    def device_uuid(self) -> UUID:
+        return self.uuid
+
+    @computed_field(return_type=Optional[bool])
+    @property
+    def is_on(self) -> Optional[bool]:
+        return self.manual_state
+
 
 class DeviceSetManualStateRequest(APIModel):
     state: bool
@@ -104,4 +114,5 @@ class DeviceSetManualStateRequest(APIModel):
 class DeviceManualStateResponse(APIModel):
     status: str
     message: str | None = None
+    is_on: Optional[bool] = None
     device: DeviceResponse

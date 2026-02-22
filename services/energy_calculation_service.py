@@ -11,18 +11,18 @@ class PowerSample:
     value: float
 
 
+@dataclass(frozen=True)
+class EnergyInterval:
+    ts: datetime
+    energy: float
+
+
 class EnergyCalculationService:
     @staticmethod
-    def integrate_hourly(samples: list[PowerSample]) -> dict[datetime, float]:
-        """
-        Zwraca energię w JEDNOSTCE PROVIDERA:
-        - jeśli power był w kW → wynik w kWh
-        - jeśli power był w W  → wynik w Wh
-        """
-        energy_by_hour: dict[datetime, float] = defaultdict(float)
-
+    def integrate_intervals(samples: list[PowerSample]) -> list[EnergyInterval]:
+        intervals: list[EnergyInterval] = []
         if len(samples) < 2:
-            return energy_by_hour
+            return intervals
 
         for i in range(len(samples) - 1):
             a = samples[i]
@@ -33,11 +33,19 @@ class EnergyCalculationService:
                 continue
 
             energy = a.value * dt_hours
+            intervals.append(EnergyInterval(ts=a.ts, energy=energy))
+        return intervals
 
-            hour_bucket = a.ts.replace(
-                minute=0, second=0, microsecond=0
-            )
+    @staticmethod
+    def integrate_hourly(samples: list[PowerSample]) -> dict[datetime, float]:
+        """
+        Zwraca energię w JEDNOSTCE PROVIDERA:
+        - jeśli power był w kW → wynik w kWh
+        - jeśli power był w W  → wynik w Wh
+        """
+        energy_by_hour: dict[datetime, float] = defaultdict(float)
 
-            energy_by_hour[hour_bucket] += energy
-
+        for interval in EnergyCalculationService.integrate_intervals(samples):
+            hour_bucket = interval.ts.replace(minute=0, second=0, microsecond=0)
+            energy_by_hour[hour_bucket] += interval.energy
         return energy_by_hour

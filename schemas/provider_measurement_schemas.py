@@ -25,18 +25,33 @@ class EnergyEntryPoint(BaseModel):
     energy: float
 
 
+class PowerEntryPoint(BaseModel):
+    timestamp: datetime
+    power: float
+
+
 class DayEnergyOut(BaseModel):
     date: str
     total_energy: float
     import_energy: float
     export_energy: float
     hours: List[HourlyEnergyPoint]
-    entries: List[EnergyEntryPoint]
+    entries: List[ProviderMeasurementResponse]
+
+
+class DayPowerOut(BaseModel):
+    date: str
+    entries: List[PowerEntryPoint]
 
 
 class ProviderEnergySeriesOut(BaseModel):
     unit: str
     days: Dict[str, DayEnergyOut]
+
+
+class ProviderPowerSeriesOut(BaseModel):
+    unit: Optional[str]
+    days: Dict[str, DayPowerOut]
 
 
 class ProviderCurrentHourPoolOut(BaseModel):

@@ -5,18 +5,17 @@ import logging
 from typing import Iterable
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_measurement import ProviderMeasurement
+from smart_common.repositories.base import BaseRepository
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 
 logger = logging.getLogger(__name__)
 
 
-class MeasurementRepository:
-    def __init__(self, session: Session) -> None:
-        self.session = session
+class MeasurementRepository(BaseRepository[ProviderMeasurement]):
+    model = ProviderMeasurement
 
     def save_measurement(
         self,
@@ -152,6 +151,24 @@ class MeasurementRepository:
                 ProviderMeasurement.measured_at >= date_start,
                 ProviderMeasurement.measured_at <= date_end,
                 ProviderMeasurement.measured_value.isnot(None),
+            )
+            .order_by(ProviderMeasurement.measured_at)
+            .all()
+        )
+
+    def list_measurements(
+        self,
+        *,
+        provider_id: int,
+        date_start: datetime,
+        date_end: datetime,
+    ) -> list[ProviderMeasurement]:
+        return (
+            self.session.query(ProviderMeasurement)
+            .filter(
+                ProviderMeasurement.provider_id == provider_id,
+                ProviderMeasurement.measured_at >= date_start,
+                ProviderMeasurement.measured_at <= date_end,
             )
             .order_by(ProviderMeasurement.measured_at)
             .all()

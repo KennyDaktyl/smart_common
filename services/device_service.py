@@ -25,6 +25,7 @@ from smart_common.nats.event_helpers import ack_subject_for_entity, subject_for_
 from smart_common.nats.publisher import NatsPublisher
 from smart_common.repositories.device import DeviceRepository
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
+from smart_common.repositories.scheduler import SchedulerRepository
 from smart_common.schemas.device_schema import DeviceListQuery, DeviceResponse
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,11 @@ class DeviceService:
         self,
         repo_factory: Callable[[Session], DeviceRepository],
         microcontroller_repo_factory: Callable[[Session], MicrocontrollerRepository],
+        scheduler_repo_factory: Callable[[Session], SchedulerRepository] | None = None,
     ):
         self._repo_factory = repo_factory
         self._microcontroller_repo_factory = microcontroller_repo_factory
+        self._scheduler_repo_factory = scheduler_repo_factory
         self.logger = logger
         self.events = EventDispatcher(NatsPublisher(NATSClient()))
 
@@ -50,6 +53,14 @@ class DeviceService:
 
     def _microcontroller_repo(self, db: Session) -> MicrocontrollerRepository:
         return self._microcontroller_repo_factory(db)
+
+    def _scheduler_repo(self, db: Session) -> SchedulerRepository:
+        if not self._scheduler_repo_factory:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Scheduler repository is not configured",
+            )
+        return self._scheduler_repo_factory(db)
 
     # ---------------------------------------------------------------------
     # Guards
@@ -117,6 +128,39 @@ class DeviceService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="threshold_value is required when device mode is AUTO",
+            )
+
+    def _ensure_scheduler_for_mode(
+        self,
+        *,
+        db: Session,
+        user_id: int,
+        new_mode: DeviceMode | None,
+        scheduler_in_payload: bool,
+        new_scheduler_id: int | None,
+        current_device: Device | None = None,
+    ) -> None:
+        effective_mode = new_mode or (current_device.mode if current_device else None)
+        effective_scheduler_id = (
+            new_scheduler_id
+            if scheduler_in_payload
+            else (current_device.scheduler_id if current_device else None)
+        )
+
+        if effective_scheduler_id is not None:
+            scheduler = self._scheduler_repo(db).get_for_user_by_id(
+                effective_scheduler_id, user_id
+            )
+            if not scheduler:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Scheduler not found",
+                )
+
+        if effective_mode == DeviceMode.SCHEDULE and effective_scheduler_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="scheduler_id is required when device mode is SCHEDULE",
             )
 
     # ---------------------------------------------------------------------
@@ -245,6 +289,13 @@ class DeviceService:
                 new_mode=payload.get("mode"),
                 new_threshold=payload.get("threshold_value"),
             )
+            self._ensure_scheduler_for_mode(
+                db=db,
+                user_id=user_id,
+                new_mode=payload.get("mode"),
+                scheduler_in_payload="scheduler_id" in payload,
+                new_scheduler_id=payload.get("scheduler_id"),
+            )
 
             data = dict(payload)
             data["microcontroller_id"] = microcontroller.id
@@ -277,6 +328,8 @@ class DeviceService:
                     mode=device.mode.value,
                     rated_power=device.rated_power,
                     threshold_value=device.threshold_value,
+                    threshold_kw=device.threshold_value,
+                    scheduler_id=device.scheduler_id,
                     microcontroller_uuid=str(microcontroller.uuid),
                 ),
             )
@@ -312,6 +365,14 @@ class DeviceService:
                 new_threshold=payload.get("threshold_value"),
                 current_device=device,
             )
+            self._ensure_scheduler_for_mode(
+                db=db,
+                user_id=user_id,
+                new_mode=payload.get("mode"),
+                scheduler_in_payload="scheduler_id" in payload,
+                new_scheduler_id=payload.get("scheduler_id"),
+                current_device=device,
+            )
 
             if microcontroller_id is not None:
                 self._ensure_device_belongs_to_microcontroller(
@@ -342,6 +403,7 @@ class DeviceService:
                     device_number=updated.device_number,
                     mode=updated.mode.value,
                     threshold_kw=updated.threshold_value,
+                    scheduler_id=updated.scheduler_id,
                 ),
             )
 

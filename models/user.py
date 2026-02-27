@@ -54,6 +54,11 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    schedulers = relationship(
+        "Scheduler",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email} role={self.role}>"

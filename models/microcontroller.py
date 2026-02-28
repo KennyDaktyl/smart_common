@@ -95,7 +95,7 @@ class Microcontroller(Base):
     devices = relationship(
         "Device",
         back_populates="microcontroller",
-        order_by="Device.device_number",
+        order_by="Device.id",
         cascade="all, delete-orphan",
     )
 

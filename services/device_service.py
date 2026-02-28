@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
@@ -25,6 +25,7 @@ from smart_common.nats.event_helpers import ack_subject_for_entity, subject_for_
 from smart_common.nats.publisher import NatsPublisher
 from smart_common.repositories.device import DeviceRepository
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
+from smart_common.repositories.scheduler import SchedulerRepository
 from smart_common.schemas.device_schema import DeviceListQuery, DeviceResponse
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,11 @@ class DeviceService:
         self,
         repo_factory: Callable[[Session], DeviceRepository],
         microcontroller_repo_factory: Callable[[Session], MicrocontrollerRepository],
+        scheduler_repo_factory: Callable[[Session], SchedulerRepository] | None = None,
     ):
         self._repo_factory = repo_factory
         self._microcontroller_repo_factory = microcontroller_repo_factory
+        self._scheduler_repo_factory = scheduler_repo_factory
         self.logger = logger
         self.events = EventDispatcher(NatsPublisher(NATSClient()))
 
@@ -50,6 +53,14 @@ class DeviceService:
 
     def _microcontroller_repo(self, db: Session) -> MicrocontrollerRepository:
         return self._microcontroller_repo_factory(db)
+
+    def _scheduler_repo(self, db: Session) -> SchedulerRepository:
+        if not self._scheduler_repo_factory:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Scheduler repository is not configured",
+            )
+        return self._scheduler_repo_factory(db)
 
     # ---------------------------------------------------------------------
     # Guards
@@ -86,8 +97,8 @@ class DeviceService:
     ) -> None:
         if device.microcontroller_id != microcontroller_id:
             self.logger.warning(
-                "Device does not belong to microcontroller | device_id=%s mc_id=%s",
-                device.id,
+                "Device does not belong to microcontroller | device_number=%s mc_id=%s",
+                device.device_number,
                 microcontroller_id,
             )
             raise HTTPException(
@@ -119,6 +130,39 @@ class DeviceService:
                 detail="threshold_value is required when device mode is AUTO",
             )
 
+    def _ensure_scheduler_for_mode(
+        self,
+        *,
+        db: Session,
+        user_id: int,
+        new_mode: DeviceMode | None,
+        scheduler_in_payload: bool,
+        new_scheduler_id: int | None,
+        current_device: Device | None = None,
+    ) -> None:
+        effective_mode = new_mode or (current_device.mode if current_device else None)
+        effective_scheduler_id = (
+            new_scheduler_id
+            if scheduler_in_payload
+            else (current_device.scheduler_id if current_device else None)
+        )
+
+        if effective_scheduler_id is not None:
+            scheduler = self._scheduler_repo(db).get_for_user_by_id(
+                effective_scheduler_id, user_id
+            )
+            if not scheduler:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Scheduler not found",
+                )
+
+        if effective_mode == DeviceMode.SCHEDULE and effective_scheduler_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="scheduler_id is required when device mode is SCHEDULE",
+            )
+
     # ---------------------------------------------------------------------
     # Queries
     # ---------------------------------------------------------------------
@@ -144,7 +188,7 @@ class DeviceService:
             items = repo.list(
                 limit=query.limit,
                 offset=query.offset,
-                order_by=repo.model.created_at.desc(),
+                order_by=repo.model.id.asc(),
             )
             total = repo.count()
         else:
@@ -245,11 +289,28 @@ class DeviceService:
                 new_mode=payload.get("mode"),
                 new_threshold=payload.get("threshold_value"),
             )
+            self._ensure_scheduler_for_mode(
+                db=db,
+                user_id=user_id,
+                new_mode=payload.get("mode"),
+                scheduler_in_payload="scheduler_id" in payload,
+                new_scheduler_id=payload.get("scheduler_id"),
+            )
 
             data = dict(payload)
             data["microcontroller_id"] = microcontroller.id
 
             device = repo.create(data)
+            if not isinstance(device.manual_state, bool):
+                device.manual_state = False
+            self._sync_device_config_state(
+                device,
+                is_on=(
+                    device.manual_state
+                    if isinstance(device.manual_state, bool)
+                    else None
+                ),
+            )
 
             self.logger.info(
                 "Device CREATED | device_id=%s mc_uuid=%s",
@@ -257,16 +318,27 @@ class DeviceService:
                 microcontroller.uuid,
             )
 
-            await self._publish_event(
+            ack_data = await self._publish_event(
                 microcontroller_uuid=microcontroller.uuid,
                 event_type=EventType.DEVICE_CREATED,
                 payload=DeviceCreatedPayload(
                     device_id=device.id,
+                    device_uuid=str(device.uuid),
                     device_number=device.device_number,
                     mode=device.mode.value,
+                    rated_power=device.rated_power,
+                    threshold_value=device.threshold_value,
                     threshold_kw=device.threshold_value,
+                    scheduler_id=device.scheduler_id,
+                    microcontroller_uuid=str(microcontroller.uuid),
                 ),
             )
+
+            ack_state = self.ack_device_state(ack_data)
+            if ack_state is not None:
+                device.manual_state = ack_state
+                device.last_state_change_at = datetime.now(timezone.utc)
+                self._sync_device_config_state(device, is_on=ack_state)
 
             return device
 
@@ -293,6 +365,14 @@ class DeviceService:
                 new_threshold=payload.get("threshold_value"),
                 current_device=device,
             )
+            self._ensure_scheduler_for_mode(
+                db=db,
+                user_id=user_id,
+                new_mode=payload.get("mode"),
+                scheduler_in_payload="scheduler_id" in payload,
+                new_scheduler_id=payload.get("scheduler_id"),
+                current_device=device,
+            )
 
             if microcontroller_id is not None:
                 self._ensure_device_belongs_to_microcontroller(
@@ -300,6 +380,14 @@ class DeviceService:
                 )
 
             updated = self._repo(db).update_for_user(device_id, user_id, payload)
+            self._sync_device_config_state(
+                updated,
+                is_on=(
+                    updated.manual_state
+                    if isinstance(updated.manual_state, bool)
+                    else None
+                ),
+            )
 
             self.logger.info(
                 "Device UPDATED | device_id=%s",
@@ -311,8 +399,11 @@ class DeviceService:
                 event_type=EventType.DEVICE_UPDATED,
                 payload=DeviceUpdatedPayload(
                     device_id=updated.id,
+                    device_uuid=str(updated.uuid),
+                    device_number=updated.device_number,
                     mode=updated.mode.value,
                     threshold_kw=updated.threshold_value,
+                    scheduler_id=updated.scheduler_id,
                 ),
             )
 
@@ -342,7 +433,11 @@ class DeviceService:
             await self._publish_event(
                 microcontroller_uuid=device.microcontroller.uuid,
                 event_type=EventType.DEVICE_DELETED,
-                payload=DeviceDeletePayload(device_id=device.id),
+                payload=DeviceDeletePayload(
+                    device_id=device_id,
+                    device_uuid=str(device.uuid),
+                    device_number=device.device_number,
+                ),
             )
 
             self._repo(db).delete(device)
@@ -366,20 +461,30 @@ class DeviceService:
 
         try:
             async with transactional_session(db):
-                device.mode = "MANUAL"
+                device.mode = DeviceMode.MANUAL
                 device.manual_state = state
                 device.last_state_change_at = datetime.now(timezone.utc)
 
-                await self._publish_event(
+                ack_data = await self._publish_event(
                     microcontroller_uuid=device.microcontroller.uuid,
                     event_type=EventType.DEVICE_COMMAND,
                     payload=DeviceCommandPayload(
-                        device_id=device.id,
+                        device_id=device_id,
+                        device_uuid=str(device.uuid),
+                        device_number=device.device_number,
                         command="SET_STATE",
                         mode="MANUAL",
                         is_on=state,
                     ),
                 )
+
+                ack_state = self.ack_device_state(ack_data)
+                if ack_state is not None:
+                    device.manual_state = ack_state
+
+                if isinstance(device.manual_state, bool):
+                    self._sync_device_config_state(device, is_on=device.manual_state)
+
                 device_dto = DeviceResponse.model_validate(device, from_attributes=True)
             return device_dto, True
 
@@ -409,12 +514,112 @@ class DeviceService:
 
         return None
 
+    def ack_device_state(self, ack_data: dict) -> bool | None:
+        if not isinstance(ack_data, dict):
+            return None
+
+        sources = [ack_data]
+        nested_ack = ack_data.get("ack")
+        if isinstance(nested_ack, dict):
+            sources.insert(0, nested_ack)
+
+        for source in sources:
+            for key in ("is_on", "actual_state"):
+                value = source.get(key)
+                if isinstance(value, bool):
+                    return value
+
+        return None
+
+    def _sync_device_config_state(
+        self,
+        device: Device,
+        *,
+        is_on: bool | None,
+    ) -> None:
+        microcontroller = getattr(device, "microcontroller", None)
+        if not microcontroller:
+            return
+
+        config = dict(microcontroller.config or {})
+        raw_devices_config = config.get("devices_config")
+
+        devices_config = (
+            [dict(item) for item in raw_devices_config if isinstance(item, dict)]
+            if isinstance(raw_devices_config, list)
+            else []
+        )
+
+        updated = False
+        for item in devices_config:
+            if (
+                item.get("device_id") == device.id
+                or item.get("pin_number") == device.device_number
+            ):
+                mode_value = (
+                    device.mode.value
+                    if hasattr(device.mode, "value")
+                    else str(device.mode)
+                )
+                threshold_value = (
+                    float(device.threshold_value)
+                    if device.threshold_value is not None
+                    else None
+                )
+                rated_power = (
+                    float(device.rated_power) if device.rated_power is not None else None
+                )
+                item["device_id"] = device.id
+                item["device_uuid"] = str(device.uuid)
+                item["device_number"] = device.device_number
+                item["pin_number"] = device.device_number
+                item["mode"] = mode_value
+                item["rated_power"] = rated_power
+                item["threshold_value"] = threshold_value
+                if is_on is not None:
+                    item["is_on"] = is_on
+                elif "is_on" not in item and isinstance(device.manual_state, bool):
+                    item["is_on"] = device.manual_state
+                updated = True
+
+        if not updated:
+            mode_value = (
+                device.mode.value if hasattr(device.mode, "value") else str(device.mode)
+            )
+            threshold_value = (
+                float(device.threshold_value)
+                if device.threshold_value is not None
+                else None
+            )
+            rated_power = (
+                float(device.rated_power) if device.rated_power is not None else None
+            )
+            devices_config.append(
+                {
+                    "device_id": device.id,
+                    "device_uuid": str(device.uuid),
+                    "device_number": device.device_number,
+                    "pin_number": device.device_number,
+                    "mode": mode_value,
+                    "rated_power": rated_power,
+                    "threshold_value": threshold_value,
+                    "is_on": (
+                        is_on
+                        if is_on is not None
+                        else (device.manual_state if isinstance(device.manual_state, bool) else None)
+                    ),
+                }
+            )
+
+        config["devices_config"] = devices_config
+        microcontroller.config = config
+
     async def _publish_event(
         self, microcontroller_uuid: UUID, event_type: EventType, payload
-    ) -> None:
-        subject = subject_for_entity(microcontroller_uuid)
+    ) -> dict:
+        subject = subject_for_entity(microcontroller_uuid, event_type.value)
         self.logger.info("Subject: %s", subject)
-        ack_subject = ack_subject_for_entity(microcontroller_uuid)
+        ack_subject = ack_subject_for_entity(microcontroller_uuid, event_type.value)
         self.logger.info("Subject ACK: %s", ack_subject)
         self.logger.debug(
             "PUBLISH event | type=%s mc_uuid=%s subject=%s ack_subject=%s payload=%s",
@@ -426,8 +631,8 @@ class DeviceService:
         )
 
         try:
-            await self.events.publish_event_and_wait_for_ack(
-                entity_type="microcontroller",
+            result = await self.events.publish_event_and_wait_for_ack(
+                entity_type=event_type.value,
                 entity_id=str(microcontroller_uuid),
                 event_type=event_type,
                 data=payload,
@@ -437,12 +642,20 @@ class DeviceService:
                 ack_subject=ack_subject,
             )
 
+            ack_data = result.get("data") or {}
+            if not ack_data.get("ok", False):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Agent rejected {event_type.value} event",
+                )
+
             self.logger.debug(
                 "EVENT ACK received | type=%s mc_uuid=%s device_id=%s",
                 event_type,
                 microcontroller_uuid,
                 payload.device_id,
             )
+            return ack_data
 
         except Exception as exc:
             self.logger.error(

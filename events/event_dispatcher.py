@@ -108,15 +108,15 @@ class EventDispatcher:
             source=source or self.default_source,
         )
 
-        # 🔥 KLUCZOWA POPRAWKA — ACK SUBJECT W KONTRAKCIE
         payload["ack_subject"] = resolved_ack
 
         logger.info(
-            "NATS PUBLISH → subject=%s ack_subject=%s event_type=%s entity_id=%s",
+            "NATS PUBLISH → subject=%s ack_subject=%s event_type=%s entity_id=%s ack_subject=%s",
             resolved_subject,
             resolved_ack,
             event_type,
             entity_id,
+            ack_subject,
         )
         logger.debug("NATS PAYLOAD → %s", payload)
 

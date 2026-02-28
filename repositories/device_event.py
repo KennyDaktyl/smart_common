@@ -38,7 +38,8 @@ class DeviceEventRepository(BaseRepository[DeviceEvent]):
             created_at=created_at or datetime.now(timezone.utc),
         )
         self.session.add(event)
-        self.session.flush()
+        self.session.commit()
+        self.session.refresh(event)
         return event
 
     def list_for_device(
@@ -64,4 +65,40 @@ class DeviceEventRepository(BaseRepository[DeviceEvent]):
             .order_by(self.model.created_at)
             .limit(limit)
             .all()
+        )
+
+    def list_state_for_device(
+        self,
+        *,
+        device_id: int,
+        date_start: datetime,
+        date_end: datetime,
+    ) -> list[DeviceEvent]:
+        return (
+            self.session.query(self.model)
+            .filter(
+                self.model.device_id == device_id,
+                self.model.event_type == DeviceEventType.STATE,
+                self.model.created_at >= date_start,
+                self.model.created_at <= date_end,
+            )
+            .order_by(self.model.created_at)
+            .all()
+        )
+
+    def get_last_state_for_device_before(
+        self,
+        *,
+        device_id: int,
+        before: datetime,
+    ) -> DeviceEvent | None:
+        return (
+            self.session.query(self.model)
+            .filter(
+                self.model.device_id == device_id,
+                self.model.event_type == DeviceEventType.STATE,
+                self.model.created_at < before,
+            )
+            .order_by(self.model.created_at.desc())
+            .first()
         )

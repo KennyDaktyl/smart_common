@@ -14,15 +14,15 @@ def stream_name() -> str:
     return settings.STREAM_NAME
 
 
-def subject_for_entity(entity_id: str) -> str:
+def subject_for_entity(entity_id: str, event_type: str) -> str:
     """Return the stream-based subject for the given entity UUID."""
     normalized_id = _normalize_entity_id(entity_id)
-    return f"{stream_name()}.{normalized_id}"
+    return f"{stream_name()}.{normalized_id}.command.{event_type}"
 
 
-def ack_subject_for_entity(entity_id: str) -> str:
+def ack_subject_for_entity(entity_id: str, event_type: str) -> str:
     """Append `.ack` to the entity-specific subject."""
-    return f"{subject_for_entity(entity_id)}.ack"
+    return f"{subject_for_entity(entity_id, event_type)}.ack"
 
 
 def build_event_payload(

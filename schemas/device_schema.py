@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from smart_common.enums.device import DeviceMode
 from smart_common.schemas.base import APIModel, ORMModel
@@ -41,7 +41,7 @@ class DeviceBase(APIModel):
         description="Microcontroller id",
         example=12,
     )
-    rated_power_w: Optional[float] = Field(
+    rated_power: Optional[float] = Field(
         None,
         gt=0,
         description="Declared device power in watts",
@@ -52,11 +52,19 @@ class DeviceBase(APIModel):
         description="Threshold value for AUTO mode decision making",
         example=22.5,
     )
+    scheduler_id: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Scheduler id required for SCHEDULE mode",
+        example=12,
+    )
 
     @model_validator(mode="after")
-    def validate_threshold_for_auto(self):
+    def validate_mode_constraints(self):
         if self.mode == DeviceMode.AUTO_POWER and self.threshold_value is None:
             raise ValueError("threshold_value is required when device mode is AUTO")
+        if self.mode == DeviceMode.SCHEDULE and self.scheduler_id is None:
+            raise ValueError("scheduler_id is required when device mode is SCHEDULE")
         return self
 
 
@@ -69,15 +77,20 @@ class DeviceUpdateRequest(APIModel):
     device_number: Optional[int] = Field(None, ge=0)
     mode: Optional[DeviceMode] = None
     provider_id: Optional[int] = None
-    rated_power_w: Optional[float] = Field(None, gt=0)
+    rated_power: Optional[float] = Field(None, gt=0)
     manual_state: Optional[bool] = None
     threshold_value: Optional[float] = None
+    scheduler_id: Optional[int] = Field(None, ge=1)
 
     @model_validator(mode="after")
     def validate_threshold_for_auto(self):
         if self.mode == DeviceMode.AUTO_POWER and self.threshold_value is None:
             raise ValueError(
                 "threshold_value must be provided when changing mode to AUTO"
+            )
+        if self.mode == DeviceMode.SCHEDULE and self.scheduler_id is None:
+            raise ValueError(
+                "scheduler_id must be provided when changing mode to SCHEDULE"
             )
         return self
 
@@ -89,12 +102,23 @@ class DeviceResponse(ORMModel):
     name: str
     device_number: int
     mode: DeviceMode
-    rated_power_w: Optional[float]
+    scheduler_id: Optional[int]
+    rated_power: Optional[float]
     threshold_value: Optional[float]
     manual_state: Optional[bool]
     last_state_change_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+    @computed_field(return_type=UUID)
+    @property
+    def device_uuid(self) -> UUID:
+        return self.uuid
+
+    @computed_field(return_type=Optional[bool])
+    @property
+    def is_on(self) -> Optional[bool]:
+        return self.manual_state
 
 
 class DeviceSetManualStateRequest(APIModel):
@@ -104,4 +128,5 @@ class DeviceSetManualStateRequest(APIModel):
 class DeviceManualStateResponse(APIModel):
     status: str
     message: str | None = None
+    is_on: Optional[bool] = None
     device: DeviceResponse

@@ -22,13 +22,24 @@ class SchedulerCommandService:
         )
 
     async def send_switch_on_command(self, *, entry: DueSchedulerEntry) -> AckResult:
+        return await self._send_switch_command(entry=entry, is_on=True)
+
+    async def send_switch_off_command(self, *, entry: DueSchedulerEntry) -> AckResult:
+        return await self._send_switch_command(entry=entry, is_on=False)
+
+    async def _send_switch_command(
+        self,
+        *,
+        entry: DueSchedulerEntry,
+        is_on: bool,
+    ) -> AckResult:
         payload = DeviceCommandPayload(
             device_id=entry.device_id,
             device_uuid=str(entry.device_uuid),
             device_number=entry.device_number,
             command="SET_STATE",
             mode=DeviceMode.SCHEDULE.value,
-            is_on=True,
+            is_on=is_on,
         )
 
         subject = subject_for_entity(
@@ -59,9 +70,10 @@ class SchedulerCommandService:
             )
         except Exception:
             logger.exception(
-                "Scheduler command ACK failed | device_id=%s slot_id=%s",
+                "Scheduler command ACK failed | device_id=%s slot_id=%s action=%s",
                 entry.device_id,
                 entry.slot_id,
+                "ON" if is_on else "OFF",
             )
             return AckResult(ok=False, is_on=None, raw_data={})
 

@@ -54,23 +54,41 @@ class SchedulerRuntimeRepository:
             )
             .all()
         )
+        return _map_due_entries(rows)
 
-        result: list[DueSchedulerEntry] = []
-        for row in rows:
-            result.append(
-                DueSchedulerEntry(
-                    device_id=row[0],
-                    device_uuid=row[1],
-                    device_number=row[2],
-                    microcontroller_uuid=row[3],
-                    microcontroller_power_provider_id=row[4],
-                    slot_id=row[5],
-                    use_power_threshold=bool(row[6]),
-                    power_threshold_value=_to_float(row[7]),
-                    power_threshold_unit=_normalize_unit(row[8]),
-                )
+    def fetch_end_entries(
+        self,
+        *,
+        day_of_week: SchedulerDayOfWeek,
+        hhmm: str,
+    ) -> list[DueSchedulerEntry]:
+        end_col = func.coalesce(SchedulerSlot.end_utc_time, SchedulerSlot.end_time)
+
+        rows = (
+            self.db.query(
+                Device.id,
+                Device.uuid,
+                Device.device_number,
+                Microcontroller.uuid,
+                Microcontroller.power_provider_id,
+                SchedulerSlot.id,
+                SchedulerSlot.use_power_threshold,
+                SchedulerSlot.power_threshold_value,
+                SchedulerSlot.power_threshold_unit,
             )
-        return result
+            .join(Microcontroller, Device.microcontroller_id == Microcontroller.id)
+            .join(Scheduler, Device.scheduler_id == Scheduler.id)
+            .join(SchedulerSlot, SchedulerSlot.scheduler_id == Scheduler.id)
+            .filter(
+                Device.mode == DeviceMode.SCHEDULE,
+                Microcontroller.enabled.is_(True),
+                SchedulerSlot.day_of_week == day_of_week,
+                end_col == hhmm,
+            )
+            .all()
+        )
+        return _map_due_entries(rows)
+
 
     def get_provider(self, provider_id: int) -> Provider | None:
         return self.db.query(Provider).filter(Provider.id == provider_id).first()
@@ -121,3 +139,22 @@ def _normalize_unit(value: str | None) -> str | None:
     if normalized.lower() == "w":
         return "W"
     return normalized
+
+
+def _map_due_entries(rows: list[tuple]) -> list[DueSchedulerEntry]:
+    result: list[DueSchedulerEntry] = []
+    for row in rows:
+        result.append(
+            DueSchedulerEntry(
+                device_id=row[0],
+                device_uuid=row[1],
+                device_number=row[2],
+                microcontroller_uuid=row[3],
+                microcontroller_power_provider_id=row[4],
+                slot_id=row[5],
+                use_power_threshold=bool(row[6]),
+                power_threshold_value=_to_float(row[7]),
+                power_threshold_unit=_normalize_unit(row[8]),
+            )
+        )
+    return result

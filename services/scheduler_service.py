@@ -19,7 +19,9 @@ class SchedulerService:
     def _repo(self, db: Session) -> SchedulerRepository:
         return self._repo_factory(db)
 
-    def _ensure_scheduler(self, db: Session, user_id: int, scheduler_id: int) -> Scheduler:
+    def _ensure_scheduler(
+        self, db: Session, user_id: int, scheduler_id: int
+    ) -> Scheduler:
         scheduler = self._repo(db).get_for_user_by_id(scheduler_id, user_id)
         if not scheduler:
             raise HTTPException(
@@ -35,6 +37,8 @@ class SchedulerService:
         scheduler = self._repo(db).create_for_user(
             user_id=user_id,
             name=payload["name"],
+            timezone_name=payload["timezone"],
+            utc_offset_minutes=payload["utc_offset_minutes"],
             slots=payload["slots"],
         )
         db.commit()
@@ -52,6 +56,8 @@ class SchedulerService:
         updated = self._repo(db).update_scheduler(
             scheduler,
             name=payload["name"],
+            timezone_name=payload["timezone"],
+            utc_offset_minutes=payload["utc_offset_minutes"],
             slots=payload["slots"],
         )
         db.commit()

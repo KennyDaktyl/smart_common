@@ -38,11 +38,15 @@ class SchedulerRepository(BaseRepository[Scheduler]):
         *,
         user_id: int,
         name: str,
+        timezone_name: str,
+        utc_offset_minutes: int,
         slots: list[dict],
     ) -> Scheduler:
         scheduler = Scheduler(
             user_id=user_id,
             name=name,
+            timezone=timezone_name,
+            utc_offset_minutes=utc_offset_minutes,
             slots=[SchedulerSlot(**slot) for slot in slots],
         )
         self.session.add(scheduler)
@@ -55,9 +59,13 @@ class SchedulerRepository(BaseRepository[Scheduler]):
         scheduler: Scheduler,
         *,
         name: str,
+        timezone_name: str,
+        utc_offset_minutes: int,
         slots: list[dict],
     ) -> Scheduler:
         scheduler.name = name
+        scheduler.timezone = timezone_name
+        scheduler.utc_offset_minutes = utc_offset_minutes
         scheduler.updated_at = datetime.now(timezone.utc)
         scheduler.slots.clear()
         scheduler.slots.extend(SchedulerSlot(**slot) for slot in slots)

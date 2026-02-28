@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smart_common.core.db import Base
@@ -29,6 +29,42 @@ class SchedulerSlot(Base):
         String(5),
         nullable=False,
         comment="HH:MM",
+    )
+    start_local_time: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+        comment="HH:MM in user's local timezone",
+    )
+    end_local_time: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+        comment="HH:MM in user's local timezone",
+    )
+    start_utc_time: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+        comment="HH:MM normalized to UTC",
+    )
+    end_utc_time: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+        comment="HH:MM normalized to UTC",
+    )
+    use_power_threshold: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    power_threshold_value: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True,
+        comment="Power threshold value for slot rule",
+    )
+    power_threshold_unit: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="Power threshold unit (W, kW, MW)",
     )
 
     scheduler = relationship("Scheduler", back_populates="slots")

@@ -28,7 +28,7 @@ class CommonSettings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_NAME: str = "smartenergy"
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: SecretStr
+    POSTGRES_PASSWORD: SecretStr = SecretStr("postgres")
 
     DATABASE_URL_OVERRIDE: str | None = None
 
@@ -39,12 +39,14 @@ class CommonSettings(BaseSettings):
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     STREAM_NAME: str = "device_communication"
+    SUBJECT: str = "device_communication.*.event.provider_current_energy"
 
     # ------------------------------------------------------------------
     # Security (REQUIRED)
     # ------------------------------------------------------------------
-    JWT_SECRET: SecretStr
-    FERNET_KEY: SecretStr
+    JWT_SECRET: SecretStr = SecretStr("dev-jwt-secret")
+    # Must be 32 url-safe base64-encoded bytes for cryptography.Fernet
+    FERNET_KEY: SecretStr = SecretStr("dev-jwt-secret")
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -54,13 +56,13 @@ class CommonSettings(BaseSettings):
     # ------------------------------------------------------------------
     # Email / SMTP (REQUIRED)
     # ------------------------------------------------------------------
-    EMAIL_HOST: str
+    EMAIL_HOST: str = "localhost"
     EMAIL_PORT: int = 587
     EMAIL_USER: str | None = None
     EMAIL_PASSWORD: SecretStr | None = None
     EMAIL_USE_TLS: bool = True
     EMAIL_USE_SSL: bool = False
-    EMAIL_FROM: str
+    EMAIL_FROM: str = "noreply@localhost"
 
     DEFAULT_EMAIL: str | None = None
 

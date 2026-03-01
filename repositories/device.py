@@ -18,7 +18,7 @@ class DeviceRepository(BaseRepository[Device]):
             self.session.query(Device)
             .join(Device.microcontroller)
             .filter(Microcontroller.user_id == user_id)
-            .order_by(Device.device_number)
+            .order_by(Device.id.asc())
             .all()
         )
 
@@ -52,7 +52,7 @@ class DeviceRepository(BaseRepository[Device]):
                 self.model.microcontroller_id == microcontroller_id,
                 Microcontroller.user_id == user_id,
             )
-            .order_by(Device.device_number)
+            .order_by(Device.id.asc())
             .all()
         )
 

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import joinedload
 
 from smart_common.models.provider import Provider
-from smart_common.providers.enums import ProviderVendor
+from smart_common.providers.enums import ProviderKind, ProviderVendor
 from smart_common.repositories.base import BaseRepository
 
 
@@ -16,6 +16,17 @@ class ProviderRepository(BaseRepository[Provider]):
 
     def list_for_user(self, user_id: int) -> list[Provider]:
         return self.list(filters={"user_id": user_id}, order_by=self.default_order_by)
+
+    def list_power_for_user(self, user_id: int) -> list[Provider]:
+        return (
+            self.session.query(self.model)
+            .filter(
+                self.model.user_id == user_id,
+                self.model.kind == ProviderKind.POWER,
+            )
+            .order_by(self.default_order_by)
+            .all()
+        )
 
     def get_active_providers(self) -> list[Provider]:
         query = (

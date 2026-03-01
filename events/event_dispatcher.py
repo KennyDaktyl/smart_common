@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Callable, Dict, Union
 
 from pydantic import BaseModel
@@ -9,9 +10,17 @@ from smart_common.nats.event_helpers import (
     subject_for_entity,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class EventDispatcher:
-    """Helper that enforces the canonical event envelope for NATS messages."""
+    """
+    Helper that enforces the canonical event envelope for NATS messages.
+
+    IMPORTANT:
+    - ack_subject MUST be included in payload
+    - backend waits on this subject explicitly
+    """
 
     def __init__(self, publisher: Any, *, default_source: str | None = None):
         self.publisher = publisher
@@ -23,7 +32,9 @@ class EventDispatcher:
         return dict(data)
 
     def _event_type_value(self, event_type: Union[EventType, str]) -> str:
-        return event_type.value if isinstance(event_type, EventType) else str(event_type)
+        return (
+            event_type.value if isinstance(event_type, EventType) else str(event_type)
+        )
 
     async def publish_event(
         self,
@@ -36,15 +47,25 @@ class EventDispatcher:
         source: str | None = None,
         context: Dict[str, Any] | None = None,
     ):
-        """Publish a single event without waiting for acknowledgements."""
+        resolved_subject = subject or subject_for_entity(entity_id)
+
         payload = build_event_payload(
+            subject=resolved_subject,
             event_type=self._event_type_value(event_type),
             entity_type=entity_type,
             entity_id=entity_id,
             data=self._serialize_data(data),
             source=source or self.default_source,
         )
-        resolved_subject = subject or subject_for_entity(entity_id)
+
+        logger.info(
+            "NATS PUBLISH → subject=%s event_type=%s entity_id=%s",
+            resolved_subject,
+            event_type,
+            entity_id,
+        )
+        logger.debug("NATS PAYLOAD → %s", payload)
+
         return await self.publisher.publish(
             resolved_subject,
             payload,
@@ -65,20 +86,52 @@ class EventDispatcher:
         source: str | None = None,
         context: Dict[str, Any] | None = None,
     ) -> dict:
-        """Publish an event and wait for a matching acknowledgement."""
+        """
+        Publish an event and wait for a matching acknowledgement.
+
+        Contract:
+        - Event payload MUST contain `ack_subject`
+        - Agent publishes ACK to that subject
+        """
+
+        logger.info("Publish event and wait for ACK")
+
         resolved_subject = subject or subject_for_entity(entity_id)
         resolved_ack = ack_subject or ack_subject_for_entity(entity_id)
+
         payload = build_event_payload(
+            subject=resolved_subject,
             event_type=self._event_type_value(event_type),
             entity_type=entity_type,
             entity_id=entity_id,
             data=self._serialize_data(data),
             source=source or self.default_source,
         )
-        return await self.publisher.publish_and_wait_for_ack(
-            subject=resolved_subject,
-            ack_subject=resolved_ack,
-            message=payload,
-            predicate=predicate,
-            timeout=timeout,
+
+        payload["ack_subject"] = resolved_ack
+
+        logger.info(
+            "NATS PUBLISH → subject=%s ack_subject=%s event_type=%s entity_id=%s ack_subject=%s",
+            resolved_subject,
+            resolved_ack,
+            event_type,
+            entity_id,
+            ack_subject,
         )
+        logger.debug("NATS PAYLOAD → %s", payload)
+
+        try:
+            result = await self.publisher.publish_and_wait_for_ack(
+                subject=resolved_subject,
+                ack_subject=resolved_ack,
+                message=payload,
+                predicate=predicate,
+                timeout=timeout,
+            )
+
+            logger.info("NATS ACK RECEIVED → %s", result)
+            return result
+
+        except Exception:
+            logger.exception("NATS ACK TIMEOUT / ERROR")
+            raise

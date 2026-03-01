@@ -2,13 +2,18 @@ from contextlib import asynccontextmanager
 from typing import Iterator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base, scoped_session, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from smart_common.core.config import settings
 
 engine = create_engine(settings.DATABASE_URL, future=True)
 
-SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False,
+)
 
 Base = declarative_base()
 

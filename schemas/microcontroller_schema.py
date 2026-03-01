@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     field_validator,
     computed_field,
+    model_validator,
 )
 
 from smart_common.enums.device import DeviceMode
@@ -100,10 +101,23 @@ class MicrocontrollerSensorsUpdateRequest(APIModel):
 
 class DeviceConfig(APIModel):
     device_id: int
-    pin_number: int = Field(..., ge=0)
+    device_uuid: Optional[UUID] = None
+    device_number: Optional[int] = Field(None, ge=0)
+    pin_number: Optional[int] = Field(None, ge=0)
     mode: DeviceMode
+    rated_power: Optional[float] = None
     threshold_value: Optional[float] = None
+    desired_state: Optional[bool] = None
     is_on: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def normalize_device_number(self):
+        number = self.device_number if self.device_number is not None else self.pin_number
+        if number is None:
+            raise ValueError("device_number or pin_number is required")
+        self.device_number = number
+        self.pin_number = number
+        return self
 
 
 class MicrocontrollerConfig(APIModel):

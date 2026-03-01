@@ -2,21 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-
-from sqlalchemy import and_, select
-from sqlalchemy.orm import Session
 from typing import Iterable
+
+from sqlalchemy import select
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_measurement import ProviderMeasurement
+from smart_common.repositories.base import BaseRepository
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 
 logger = logging.getLogger(__name__)
 
 
-class MeasurementRepository:
-    def __init__(self, session: Session) -> None:
-        self.session = session
+class MeasurementRepository(BaseRepository[ProviderMeasurement]):
+    model = ProviderMeasurement
 
     def save_measurement(
         self,
@@ -106,15 +105,17 @@ class MeasurementRepository:
             select(ProviderMeasurement)
             .where(ProviderMeasurement.provider_id.in_(provider_ids))
             .order_by(
-                ProviderMeasurement.provider_id, ProviderMeasurement.measured_at.desc()
+                ProviderMeasurement.provider_id,
+                ProviderMeasurement.measured_at.desc(),
             )
         )
         results = self.session.execute(stmt).scalars()
+
         last_by_provider: dict[int, ProviderMeasurement] = {}
         for measurement in results:
-            provider_id = measurement.provider_id
-            if provider_id not in last_by_provider:
-                last_by_provider[provider_id] = measurement
+            if measurement.provider_id not in last_by_provider:
+                last_by_provider[measurement.provider_id] = measurement
+
         return last_by_provider
 
     def _is_equivalent(
@@ -130,26 +131,65 @@ class MeasurementRepository:
 
         if last_entry.measured_value is None or measurement.value is None:
             return last_entry.measured_value is None and measurement.value is None
+
         return float(last_entry.measured_value) == measurement.value
 
-    def list_for_provider(
+    def list_power_samples(
         self,
         *,
         provider_id: int,
         date_start: datetime,
         date_end: datetime,
-        limit: int,
+    ) -> list[tuple[datetime, float]]:
+        return (
+            self.session.query(
+                ProviderMeasurement.measured_at,
+                ProviderMeasurement.measured_value,
+            )
+            .filter(
+                ProviderMeasurement.provider_id == provider_id,
+                ProviderMeasurement.measured_at >= date_start,
+                ProviderMeasurement.measured_at <= date_end,
+                ProviderMeasurement.measured_value.isnot(None),
+            )
+            .order_by(ProviderMeasurement.measured_at)
+            .all()
+        )
+
+    def list_measurements(
+        self,
+        *,
+        provider_id: int,
+        date_start: datetime,
+        date_end: datetime,
     ) -> list[ProviderMeasurement]:
         return (
             self.session.query(ProviderMeasurement)
             .filter(
-                and_(
-                    ProviderMeasurement.provider_id == provider_id,
-                    ProviderMeasurement.measured_at >= date_start,
-                    ProviderMeasurement.measured_at <= date_end,
-                )
+                ProviderMeasurement.provider_id == provider_id,
+                ProviderMeasurement.measured_at >= date_start,
+                ProviderMeasurement.measured_at <= date_end,
             )
-            .order_by(ProviderMeasurement.measured_at.asc())
-            .limit(limit)
+            .order_by(ProviderMeasurement.measured_at)
             .all()
+        )
+
+    def get_last_power_sample_before(
+        self,
+        *,
+        provider_id: int,
+        before: datetime,
+    ) -> tuple[datetime, float] | None:
+        return (
+            self.session.query(
+                ProviderMeasurement.measured_at,
+                ProviderMeasurement.measured_value,
+            )
+            .filter(
+                ProviderMeasurement.provider_id == provider_id,
+                ProviderMeasurement.measured_at < before,
+                ProviderMeasurement.measured_value.isnot(None),
+            )
+            .order_by(ProviderMeasurement.measured_at.desc())
+            .first()
         )

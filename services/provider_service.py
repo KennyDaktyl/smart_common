@@ -84,22 +84,6 @@ class ProviderService:
             )
         return provider
 
-<<<<<<< HEAD
-    # def _ensure_provider_for_microcontroller(
-    #     self,
-    #     db: Session,
-    #     user_id: int,
-    #     provider_id: int,
-    #     microcontroller_id: int,
-    # ) -> Provider:
-    #     provider = self._ensure_provider(db, user_id, provider_id)
-    #     if provider.microcontroller_id != microcontroller_id:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_404_NOT_FOUND,
-    #             detail="Provider not found",
-    #         )
-    #     return provider
-=======
     def _ensure_provider_for_microcontroller(
         self,
         db: Session,
@@ -113,7 +97,6 @@ class ProviderService:
                 detail="Provider not found",
             )
         return provider
->>>>>>> b480db2f0e7bc39d0bcf074d27be8099b5b3b9e7
 
     # ---------- CONFIG VALIDATION (TU JEST KLUCZ) ----------
 

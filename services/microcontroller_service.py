@@ -6,11 +6,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from smart_common.core import db
+from smart_common.enums.event import EventType
 from smart_common.models.microcontroller import Microcontroller
 from smart_common.models.microcontroller_sensor_capability import (
     MicrocontrollerSensorCapability,
 )
 from smart_common.enums.sensor import SensorType
+from smart_common.nats.client import NATSClient
+from smart_common.nats.event_helpers import stream_name
+from smart_common.nats.publisher import NatsPublisher
 from smart_common.providers.enums import ProviderKind, ProviderType
 from smart_common.providers.registry import resolve_sensor_type
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
@@ -18,6 +22,7 @@ from smart_common.repositories.provider import ProviderRepository
 from smart_common.schemas.microcontroller_schema import (
     MicrocontrollerConfigUpdateRequest,
 )
+from smart_common.events.event_dispatcher import EventDispatcher
 
 
 class MicrocontrollerService:
@@ -30,9 +35,18 @@ class MicrocontrollerService:
         self._repo_factory = repo_factory
         self._provider_repo_factory = provider_repo_factory
         self.logger = logging.getLogger(__name__)
+        self.events = EventDispatcher(NatsPublisher(NATSClient()))
 
     def _repo(self, db: Session) -> MicrocontrollerRepository:
         return self._repo_factory(db)
+
+    def _provider_repo(self, db: Session) -> ProviderRepository:
+        if not self._provider_repo_factory:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Provider repository is not configured",
+            )
+        return self._provider_repo_factory(db)
 
     def register_microcontroller_admin(
         self,
@@ -114,6 +128,7 @@ class MicrocontrollerService:
         config = microcontroller.config or {}
 
         config["uuid"] = str(microcontroller.uuid)
+        config.pop("device_uuid", None)
 
         if "max_devices" in data:
             config["device_max"] = microcontroller.max_devices
@@ -182,13 +197,186 @@ class MicrocontrollerService:
 
         update_data.pop("uuid", None)
         update_data.pop("device_max", None)
+        update_data.pop("device_uuid", None)
 
         config.update(update_data)
+        config.pop("device_uuid", None)
         mc.config = config
 
         db.commit()
         db.refresh(mc)
         return mc
+
+    async def set_power_provider(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        microcontroller_uuid: UUID,
+        provider_uuid: UUID | None,
+    ) -> Microcontroller:
+        microcontroller = self._repo(db).get_for_user_by_uuid(microcontroller_uuid, user_id)
+        if not microcontroller:
+            raise HTTPException(status_code=404, detail="Microcontroller not found")
+
+        previous_provider_uuid = (
+            str(microcontroller.power_provider.uuid)
+            if getattr(microcontroller, "power_provider", None)
+            else None
+        )
+
+        next_provider_id: int | None = None
+        next_provider_uuid = str(provider_uuid) if provider_uuid is not None else None
+
+        if provider_uuid is not None:
+            provider = self._provider_repo(db).get_for_user_by_uuid(provider_uuid, user_id)
+            if not provider or not provider.enabled:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Provider not found or not available",
+                )
+            next_provider_id = provider.id
+            next_provider_uuid = str(provider.uuid)
+
+        if previous_provider_uuid == next_provider_uuid:
+            self.logger.info(
+                "Provider already set for microcontroller",
+                extra={
+                    "microcontroller_uuid": str(microcontroller.uuid),
+                    "provider_uuid": next_provider_uuid,
+                },
+            )
+            return microcontroller
+
+        ack_data = await self._publish_provider_updated(
+            microcontroller_uuid=str(microcontroller.uuid),
+            provider_uuid=next_provider_uuid,
+            previous_provider_uuid=previous_provider_uuid,
+        )
+
+        microcontroller.power_provider_id = next_provider_id
+        db.commit()
+        db.refresh(microcontroller)
+
+        self.logger.info(
+            "Provider updated for microcontroller",
+            extra={
+                "microcontroller_uuid": str(microcontroller.uuid),
+                "previous_provider_uuid": previous_provider_uuid,
+                "provider_uuid": next_provider_uuid,
+                "ack_changed": ack_data.get("changed"),
+            },
+        )
+
+        return microcontroller
+
+    async def _publish_provider_updated(
+        self,
+        *,
+        microcontroller_uuid: str,
+        provider_uuid: str | None,
+        previous_provider_uuid: str | None,
+    ) -> dict:
+        event_type = EventType.PROVIDER_UPDATED
+        subject = f"{stream_name()}.{microcontroller_uuid}.command.provider_updated"
+        ack_subject = f"{stream_name()}.provider_update.ack"
+        try:
+            result = await self.events.publish_event_and_wait_for_ack(
+                entity_type="microcontroller",
+                entity_id=microcontroller_uuid,
+                event_type=event_type,
+                data={"provider_uuid": provider_uuid},
+                predicate=lambda payload: self._provider_updated_ack_matches(
+                    payload=payload,
+                    microcontroller_uuid=microcontroller_uuid,
+                    provider_uuid=provider_uuid,
+                ),
+                timeout=10.0,
+                subject=subject,
+                ack_subject=ack_subject,
+                source="backend",
+            )
+        except Exception as exc:
+            self.logger.error(
+                "PROVIDER_UPDATED ACK FAILED | mc_uuid=%s error=%s",
+                microcontroller_uuid,
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"Microcontroller did not acknowledge PROVIDER_UPDATED event: {exc}",
+            ) from exc
+
+        ack_data = result.get("data") or {}
+        if not ack_data.get("ok", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent rejected provider update",
+            )
+
+        if ack_data.get("changed") is not True:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent did not confirm provider change",
+            )
+
+        if str(ack_data.get("microcontroller_uuid")) != microcontroller_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent ACK microcontroller_uuid mismatch",
+            )
+
+        expected_provider_uuid = provider_uuid
+        got_provider_uuid = ack_data.get("provider_uuid")
+        if expected_provider_uuid is None:
+            if got_provider_uuid is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Agent ACK provider_uuid mismatch",
+                )
+        elif str(got_provider_uuid) != expected_provider_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent ACK provider_uuid mismatch",
+            )
+
+        got_previous = ack_data.get("previous_provider_uuid")
+        if previous_provider_uuid is None:
+            if got_previous is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Agent ACK previous_provider_uuid mismatch",
+                )
+        elif str(got_previous) != previous_provider_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent ACK previous_provider_uuid mismatch",
+            )
+
+        return ack_data
+
+    def _provider_updated_ack_matches(
+        self,
+        *,
+        payload: dict,
+        microcontroller_uuid: str,
+        provider_uuid: str | None,
+    ) -> bool:
+        if not isinstance(payload, dict):
+            return False
+
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return False
+
+        if str(data.get("microcontroller_uuid")) != microcontroller_uuid:
+            return False
+
+        incoming_provider_uuid = data.get("provider_uuid")
+        if provider_uuid is None:
+            return incoming_provider_uuid is None
+        return str(incoming_provider_uuid) == provider_uuid
 
     # def __init__(
     #     self,

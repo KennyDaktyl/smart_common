@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smart_common.core.db import Base
@@ -34,7 +35,12 @@ class ProviderMeasurement(Base):
     )
     metadata_payload: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
-        JSON,
+        MutableDict.as_mutable(JSON),
+        nullable=False,
+        default=dict,
+    )
+    extra_data: Mapped[dict[str, Any]] = mapped_column(
+        MutableDict.as_mutable(JSON),
         nullable=False,
         default=dict,
     )

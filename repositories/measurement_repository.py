@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from collections.abc import Mapping
 import logging
-from typing import Iterable
+from typing import Any, Iterable
 
 from sqlalchemy import select
 
@@ -13,9 +14,70 @@ from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_METADATA_KEYS = frozenset(
+    {
+        "unit_source",
+        "power_source",
+        "measurement_source",
+        "error",
+    }
+)
+
+
+def _make_json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+
+    if isinstance(value, Mapping):
+        return {str(key): _make_json_safe(item) for key, item in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_make_json_safe(item) for item in value]
+
+    return str(value)
+
+
+def _normalize_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(metadata, Mapping):
+        return {}
+
+    return {str(key): _make_json_safe(value) for key, value in metadata.items()}
+
+
+def _split_metadata(metadata: Mapping[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    normalized = _normalize_metadata(metadata)
+
+    system_metadata: dict[str, Any] = {}
+    extra_data: dict[str, Any] = {}
+    for key, value in normalized.items():
+        if key in SYSTEM_METADATA_KEYS:
+            system_metadata[key] = value
+        else:
+            extra_data[key] = value
+
+    return system_metadata, extra_data
+
+
+def _deep_merge_dict(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in updates.items():
+        current = merged.get(key)
+        if isinstance(current, Mapping) and isinstance(value, Mapping):
+            merged[key] = _deep_merge_dict(dict(current), dict(value))
+        else:
+            merged[key] = value
+    return merged
+
 
 class MeasurementRepository(BaseRepository[ProviderMeasurement]):
     model = ProviderMeasurement
+
+    @staticmethod
+    def split_metadata(metadata: Mapping[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+        return _split_metadata(metadata)
 
     def save_measurement(
         self,
@@ -32,17 +94,20 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
             self._update_last_measurement(
                 last_entry,
                 measurement,
+                metadata_parts=self.split_metadata(measurement.metadata),
                 provider_id=provider.id,
                 poll_id=poll_id,
             )
             return None
 
+        system_metadata, extra_data = self.split_metadata(measurement.metadata)
         entry = ProviderMeasurement(
             provider_id=provider.id,
             measured_at=measurement.measured_at,
             measured_value=measurement.value,
             measured_unit=measurement.unit,
-            metadata_payload=dict(measurement.metadata or {}),
+            metadata_payload=system_metadata,
+            extra_data=extra_data,
         )
 
         self.session.add(entry)
@@ -54,6 +119,8 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 "provider_id": provider.id,
                 "poll_id": poll_id,
                 "action": "inserted",
+                "system_metadata_keys": sorted(system_metadata.keys()),
+                "extra_data_keys": sorted(extra_data.keys()),
             },
         )
 
@@ -64,13 +131,17 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         entry: ProviderMeasurement,
         measurement: NormalizedMeasurement,
         *,
+        metadata_parts: tuple[dict[str, Any], dict[str, Any]],
         provider_id: int,
         poll_id: str | None,
     ) -> None:
+        system_metadata, extra_data = metadata_parts
         entry.measured_at = measurement.measured_at
         entry.measured_unit = measurement.unit
         entry.measured_value = measurement.value
-        entry.metadata_payload = dict(measurement.metadata or {})
+        entry.metadata_payload = system_metadata
+        existing_extra_data = _normalize_metadata(entry.extra_data)
+        entry.extra_data = _deep_merge_dict(existing_extra_data, extra_data)
         self.session.add(entry)
         self.session.flush()
 
@@ -80,6 +151,8 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 "provider_id": provider_id,
                 "poll_id": poll_id,
                 "action": "refreshed",
+                "system_metadata_keys": sorted(system_metadata.keys()),
+                "extra_data_keys": sorted(extra_data.keys()),
             },
         )
 

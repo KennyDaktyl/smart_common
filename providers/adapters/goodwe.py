@@ -10,7 +10,12 @@ from smart_common.enums.unit import PowerUnit
 from smart_common.providers.adapters.utils import _parse_watt
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 from smart_common.providers.adapters.base import BaseProviderAdapter
-from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
+from smart_common.providers.enums import (
+    ProviderKind,
+    ProviderPowerSource,
+    ProviderType,
+    ProviderVendor,
+)
 from smart_common.providers.exceptions import ProviderError, ProviderFetchError
 from smart_common.providers.provider_config.goodwe import goodwe_integration_settings
 
@@ -200,7 +205,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         self._external_id = self._powerstation_ids[0]
         return self._powerstation_ids
 
-    def get_current_export_power(self, power_station_id: str) -> Optional[float]:
+    def _get_powerflow_payload(self, power_station_id: str) -> Mapping[str, Any] | None:
         data = self._post(
             "/v2/PowerStation/GetPowerflow",
             {"PowerStationId": power_station_id},
@@ -216,6 +221,26 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         if not data.get("hasPowerflow", False):
             return None
 
+        return powerflow
+
+    @staticmethod
+    def _resolve_power_source(
+        power_source_hint: ProviderPowerSource | str | None,
+    ) -> ProviderPowerSource:
+        if isinstance(power_source_hint, ProviderPowerSource):
+            return power_source_hint
+
+        if isinstance(power_source_hint, str):
+            normalized = power_source_hint.strip().lower()
+            if normalized in {"inverter", "pv_inverter", "pv"}:
+                return ProviderPowerSource.INVERTER
+            if normalized in {"meter", "power_meter", "grid_meter"}:
+                return ProviderPowerSource.METER
+
+        return ProviderPowerSource.METER
+
+    @staticmethod
+    def _extract_signed_grid_power(powerflow: Mapping[str, Any]) -> Optional[float]:
         grid_w = _parse_watt(powerflow.get("grid"))
         load_status = powerflow.get("loadStatus")
 
@@ -230,21 +255,71 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         # status nieznany
         return None
 
+    @staticmethod
+    def _extract_pv_power(powerflow: Mapping[str, Any]) -> Optional[float]:
+        pv_w = _parse_watt(powerflow.get("pv"))
+        if pv_w is None:
+            return None
+        return float(pv_w)
+
+    def get_current_export_power(self, power_station_id: str) -> Optional[float]:
+        powerflow = self._get_powerflow_payload(power_station_id)
+        if powerflow is None:
+            return None
+        return self._extract_signed_grid_power(powerflow)
+
+    def get_current_power_by_provider_type(
+        self,
+        power_station_id: str,
+        *,
+        power_source: ProviderPowerSource | str | None = None,
+    ) -> Optional[float]:
+        powerflow = self._get_powerflow_payload(power_station_id)
+        if powerflow is None:
+            return None
+
+        resolved_power_source = self._resolve_power_source(power_source)
+        if resolved_power_source == ProviderPowerSource.INVERTER:
+            return self._extract_pv_power(powerflow)
+
+        return self._extract_signed_grid_power(powerflow)
+
     def get_current_power(self, device_id: str) -> Optional[float]:
-        return self.get_current_export_power(device_id)
+        power_source_hint = getattr(self, "provider_power_source", None)
+        return self.get_current_power_by_provider_type(
+            device_id,
+            power_source=power_source_hint,
+        )
 
     def fetch_measurement(self) -> NormalizedMeasurement:
         if not self._external_id:
             self.get_powerstation_ids()
 
+        power_source_hint = getattr(self, "provider_power_source", None)
+        resolved_power_source = self._resolve_power_source(power_source_hint)
         value = self.get_current_power(self._external_id)
+
+        logger.info(
+            "GoodWe measurement source selected",
+            extra={
+                "powerstation_id": self._external_id,
+                "power_source": resolved_power_source.value,
+                "value": value,
+            },
+        )
 
         return NormalizedMeasurement(
             provider_id=getattr(self, "provider_id", 0),
             value=value,
             unit=PowerUnit.WATT.value,
             measured_at=datetime.now(timezone.utc),
-            metadata={"powerstation_id": self._external_id},
+            metadata={
+                "powerstation_id": self._external_id,
+                "measurement_source": "pv"
+                if resolved_power_source == ProviderPowerSource.INVERTER
+                else "grid",
+                "power_source": resolved_power_source.value,
+            },
         )
 
     # ------------------------------------------------------------------

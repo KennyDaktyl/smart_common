@@ -5,7 +5,12 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator
 
 from smart_common.enums.unit import PowerUnit
-from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
+from smart_common.providers.enums import (
+    ProviderKind,
+    ProviderPowerSource,
+    ProviderType,
+    ProviderVendor,
+)
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.provider_measurement_schemas import (
     ProviderMeasurementResponse,
@@ -36,6 +41,7 @@ class ProviderBase(APIModel):
     vendor: Optional[ProviderVendor] = None
 
     unit: Optional[PowerUnit] = None
+    power_source: ProviderPowerSource | None = None
 
     value_min: Optional[float] = None
     value_max: Optional[float] = None
@@ -54,6 +60,7 @@ class ProviderCreateRequest(APIModel):
 
     external_id: str | None = None
     unit: PowerUnit | None = None
+    power_source: ProviderPowerSource | None = None
 
     value_min: float | None = None
     value_max: float | None = None
@@ -70,6 +77,7 @@ class ProviderUpdateRequest(APIModel):
     name: Optional[str] = None
     vendor: Optional[ProviderVendor] = None
     unit: Optional[PowerUnit] = None
+    power_source: ProviderPowerSource | None = None
 
     value_min: Optional[float] = None
     value_max: Optional[float] = None
@@ -88,6 +96,7 @@ class ProviderResponse(ORMModel):
     vendor: Optional[ProviderVendor]
     external_id: str | None
     unit: Optional[PowerUnit]
+    power_source: ProviderPowerSource | None
 
     value_min: Optional[float]
     value_max: Optional[float]

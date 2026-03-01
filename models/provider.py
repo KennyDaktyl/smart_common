@@ -22,7 +22,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, object_session
 
 from smart_common.core.db import Base
 from smart_common.models.provider_measurement import ProviderMeasurement
-from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
+from smart_common.providers.enums import (
+    ProviderKind,
+    ProviderPowerSource,
+    ProviderType,
+    ProviderVendor,
+)
 from smart_common.enums.unit import PowerUnit
 from smart_common.schemas.normalized_measurement import (
     NormalizedMeasurement,
@@ -80,6 +85,12 @@ class Provider(Base):
     unit: Mapped[PowerUnit | None] = mapped_column(
         Enum(PowerUnit, name="power_unit_enum"),
         nullable=True,
+    )
+
+    power_source: Mapped[ProviderPowerSource | None] = mapped_column(
+        Enum(ProviderPowerSource, name="provider_power_source_enum"),
+        nullable=True,
+        comment="Selects which provider metric is treated as the primary power value",
     )
 
     # ---------- physical range (NOT scheduler rules) ----------

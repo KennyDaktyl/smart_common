@@ -36,7 +36,15 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
     # INIT
     # ------------------------------------------------------------------
 
-    def __init__(self, username: str, password: str) -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        *,
+        provider_id: int,
+        provider_external_id: str,
+        provider_power_source: ProviderPowerSource,
+    ) -> None:
         super().__init__(
             base_url="https://www.semsportal.com",
             timeout=goodwe_integration_settings.GOODWE_TIMEOUT,
@@ -45,6 +53,9 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
         self.username = username
         self.password = password
+        self.provider_id = provider_id
+        self.provider_external_id = provider_external_id
+        self.provider_power_source = provider_power_source
 
         self._login_base_url = "https://www.semsportal.com"
         self._api_base_url: str | None = None
@@ -52,7 +63,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         self._logged_in = False
         self._token_ctx: dict[str, Any] | None = None
 
-        self._external_id: str | None = None
+        self._external_id: str | None = provider_external_id
         self._powerstation_ids: list[str] | None = None
 
     # ------------------------------------------------------------------
@@ -225,19 +236,11 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
 
     @staticmethod
     def _resolve_power_source(
-        power_source_hint: ProviderPowerSource | str | None,
+        power_source_hint: ProviderPowerSource,
     ) -> ProviderPowerSource:
         if isinstance(power_source_hint, ProviderPowerSource):
             return power_source_hint
-
-        if isinstance(power_source_hint, str):
-            normalized = power_source_hint.strip().lower()
-            if normalized in {"inverter", "pv_inverter", "pv"}:
-                return ProviderPowerSource.INVERTER
-            if normalized in {"meter", "power_meter", "grid_meter"}:
-                return ProviderPowerSource.METER
-
-        return ProviderPowerSource.METER
+        raise ProviderError("Provider power_source not configured")
 
     @staticmethod
     def _extract_signed_grid_power(powerflow: Mapping[str, Any]) -> Optional[float]:
@@ -272,7 +275,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         self,
         power_station_id: str,
         *,
-        power_source: ProviderPowerSource | str | None = None,
+        power_source: ProviderPowerSource,
     ) -> Optional[float]:
         powerflow = self._get_powerflow_payload(power_station_id)
         if powerflow is None:
@@ -285,18 +288,22 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         return self._extract_signed_grid_power(powerflow)
 
     def get_current_power(self, device_id: str) -> Optional[float]:
-        power_source_hint = getattr(self, "provider_power_source", None)
         return self.get_current_power_by_provider_type(
             device_id,
-            power_source=power_source_hint,
+            power_source=self.provider_power_source,
         )
 
     def fetch_measurement(self) -> NormalizedMeasurement:
         if not self._external_id:
             self.get_powerstation_ids()
 
-        power_source_hint = getattr(self, "provider_power_source", None)
-        resolved_power_source = self._resolve_power_source(power_source_hint)
+        resolved_power_source = self._resolve_power_source(self.provider_power_source)
+
+        logger.info(
+            "GoodWe resolved power source",
+            extra={"power_source": self.provider_power_source.value},
+        )
+
         value = self.get_current_power(self._external_id)
 
         logger.info(
@@ -309,7 +316,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         )
 
         return NormalizedMeasurement(
-            provider_id=getattr(self, "provider_id", 0),
+            provider_id=self.provider_id,
             value=value,
             unit=PowerUnit.WATT.value,
             measured_at=datetime.now(timezone.utc),

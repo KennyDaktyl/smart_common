@@ -30,6 +30,9 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         username: str,
         password: str,
         *,
+        provider_id: int,
+        provider_external_id: str,
+        provider_power_source: ProviderPowerSource,
         base_url: str | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
@@ -43,6 +46,9 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
         self.username = username
         self.password = password
+        self.provider_id = provider_id
+        self.provider_external_id = provider_external_id
+        self.provider_power_source = provider_power_source
         self._logged_in = False
         self._token_expires_at: datetime | None = None
 
@@ -436,66 +442,29 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
     def fetch_measurement(self) -> NormalizedMeasurement:
         logger.info("Huawei fetching measurement", extra=self._log_context())
-        device_id = getattr(self, "provider_external_id", None)
+        device_id = self.provider_external_id
         if not device_id:
             raise ProviderError(
                 message="Huawei adapter missing device identifier",
                 details={"vendor": self.vendor.value},
             )
 
-<<<<<<< HEAD
         value = self.get_current_power(device_id)
         measured_at = datetime.now(timezone.utc)
         resolved_power_source = self._resolve_power_source(
-            getattr(self, "provider_power_source", None)
+            self.provider_power_source
         )
-=======
-        payload = self.get_production(device_id)
-        data = self._resolve_production_payload(payload)
-        if data is None:
-            raise ProviderError(
-                message="Huawei getDevRealKpi returned unexpected payload",
-                details={"payload": payload},
-            )
-
-        data_item_map = data.get("dataItemMap")
-        data_map: Mapping[str, Any] = (
-            data_item_map if isinstance(data_item_map, Mapping) else {}
-        )
-
-        active_power = self._extract_power_value(data)
-        if active_power is None:
-            raise ProviderError(
-                message="Huawei getDevRealKpi missing power value",
-                details={"payload": payload},
-            )
-
-        resolved_power_source = self._resolve_power_source(
-            getattr(self, "provider_power_source", None)
-        )
-        metadata = self._build_metadata(data_map)
-        metadata.setdefault("device_id", device_id)
-        metadata.setdefault("power_source", resolved_power_source.value)
-        metadata.setdefault("measurement_source", "active_power")
->>>>>>> master
 
         logger.info(
             "Huawei measurement ready",
             extra=self._log_context(
                 device_id=device_id,
-<<<<<<< HEAD
                 value=value,
                 power_source=resolved_power_source.value,
-=======
-                value=active_power,
-                power_source=resolved_power_source.value,
-                metadata_keys=list(metadata.keys()),
->>>>>>> master
             ),
         )
         return NormalizedMeasurement(
-            provider_id=getattr(self, "provider_id", 0),
-<<<<<<< HEAD
+            provider_id=self.provider_id,
             value=value,
             unit=PowerUnit.WATT.value,
             measured_at=measured_at,
@@ -504,10 +473,4 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
                 "power_source": resolved_power_source.value,
                 "measurement_source": "active_power",
             },
-=======
-            value=active_power,
-            unit=PowerUnit.KILOWATT.value,
-            measured_at=datetime.utcnow(),
-            metadata=metadata,
->>>>>>> master
         )

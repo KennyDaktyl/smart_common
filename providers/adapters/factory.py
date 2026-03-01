@@ -10,7 +10,7 @@ from smart_common.core.security import decrypt_secret
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.definitions import registry as _  # ensure definitions register
 from smart_common.providers.definitions.base import ProviderDefinition, ProviderDefinitionRegistry
-from smart_common.providers.enums import ProviderVendor
+from smart_common.providers.enums import ProviderPowerSource, ProviderVendor
 from smart_common.providers.exceptions import ProviderConfigError, ProviderNotSupportedError
 
 if TYPE_CHECKING:
@@ -151,29 +151,28 @@ def create_adapter_for_provider(
             details={"provider_id": provider.id, "vendor": vendor.value},
         )
 
+    power_source = _resolve_provider_power_source(provider)
+    if power_source is None:
+        raise ProviderConfigError(
+            "Provider power_source is required for polling",
+            details={"provider_id": provider.id, "vendor": vendor.value},
+        )
+
     factory = factory or get_vendor_adapter_factory()
 
-    cache_key = f"{vendor.value}:{external_id}"
+    cache_key = (
+        f"{provider.id}:{vendor.value}:{external_id}:{power_source.value}"
+    )
     adapter = factory.create(
         vendor,
         credentials=connect_credentials,
         cache_key=cache_key,
+        overrides={
+            "provider_id": provider.id,
+            "provider_external_id": external_id,
+            "provider_power_source": power_source,
+        },
     )
-
-    # keep runtime metadata on the adapter to avoid re-fetching
-    setattr(adapter, "provider_external_id", external_id)
-    setattr(adapter, "provider_id", provider.id)
-
-    if getattr(provider, "external_id", None):
-        setattr(adapter, "_external_id", provider.external_id)
-
-    if getattr(provider, "power_source", None):
-        power_source = provider.power_source
-        setattr(
-            adapter,
-            "provider_power_source",
-            power_source.value if hasattr(power_source, "value") else str(power_source),
-        )
 
     return adapter
 
@@ -217,3 +216,35 @@ def _resolve_provider_credentials(provider: "Provider") -> dict[str, str]:
 
 def _decrypt_secret(value: str) -> str:
     return decrypt_secret(value)
+
+
+def _resolve_provider_power_source(provider: "Provider") -> ProviderPowerSource | None:
+    raw_power_source = getattr(provider, "power_source", None)
+    if raw_power_source is None:
+        return None
+
+    if isinstance(raw_power_source, ProviderPowerSource):
+        return raw_power_source
+
+    if isinstance(raw_power_source, str):
+        normalized = raw_power_source.strip().lower()
+        try:
+            return ProviderPowerSource(normalized)
+        except ValueError as exc:
+            raise ProviderConfigError(
+                "Provider power_source is invalid",
+                details={
+                    "provider_id": provider.id,
+                    "vendor": provider.vendor.value if provider.vendor else None,
+                    "power_source": raw_power_source,
+                },
+            ) from exc
+
+    raise ProviderConfigError(
+        "Provider power_source has unsupported type",
+        details={
+            "provider_id": provider.id,
+            "vendor": provider.vendor.value if provider.vendor else None,
+            "power_source_type": type(raw_power_source).__name__,
+        },
+    )

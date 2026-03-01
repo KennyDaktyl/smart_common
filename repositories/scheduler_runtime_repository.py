@@ -26,16 +26,20 @@ class SchedulerRuntimeRepository:
         *,
         day_of_week: SchedulerDayOfWeek,
         hhmm: str,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[DueSchedulerEntry]:
         start_col = func.coalesce(SchedulerSlot.start_utc_time, SchedulerSlot.start_time)
         end_col = func.coalesce(SchedulerSlot.end_utc_time, SchedulerSlot.end_time)
 
-        rows = (
+        query = (
             self.db.query(
                 Device.id,
                 Device.uuid,
                 Device.device_number,
                 Microcontroller.uuid,
+                Scheduler.id,
+                Scheduler.user_id,
                 Microcontroller.power_provider_id,
                 SchedulerSlot.id,
                 SchedulerSlot.use_power_threshold,
@@ -52,8 +56,14 @@ class SchedulerRuntimeRepository:
                 start_col <= hhmm,
                 hhmm < end_col,
             )
-            .all()
+            .order_by(Device.id.asc(), SchedulerSlot.id.asc())
         )
+        if offset > 0:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+
+        rows = query.all()
         return _map_due_entries(rows)
 
     def fetch_end_entries(
@@ -61,15 +71,19 @@ class SchedulerRuntimeRepository:
         *,
         day_of_week: SchedulerDayOfWeek,
         hhmm: str,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[DueSchedulerEntry]:
         end_col = func.coalesce(SchedulerSlot.end_utc_time, SchedulerSlot.end_time)
 
-        rows = (
+        query = (
             self.db.query(
                 Device.id,
                 Device.uuid,
                 Device.device_number,
                 Microcontroller.uuid,
+                Scheduler.id,
+                Scheduler.user_id,
                 Microcontroller.power_provider_id,
                 SchedulerSlot.id,
                 SchedulerSlot.use_power_threshold,
@@ -85,10 +99,15 @@ class SchedulerRuntimeRepository:
                 SchedulerSlot.day_of_week == day_of_week,
                 end_col == hhmm,
             )
-            .all()
+            .order_by(Device.id.asc(), SchedulerSlot.id.asc())
         )
-        return _map_due_entries(rows)
+        if offset > 0:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
 
+        rows = query.all()
+        return _map_due_entries(rows)
 
     def get_provider(self, provider_id: int) -> Provider | None:
         return self.db.query(Provider).filter(Provider.id == provider_id).first()
@@ -115,7 +134,6 @@ class SchedulerRuntimeRepository:
         device.last_state_change_at = changed_at
 
 
-
 def _to_float(value: float | int | Decimal | None) -> float | None:
     try:
         if value is None:
@@ -123,7 +141,6 @@ def _to_float(value: float | int | Decimal | None) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 
 def _normalize_unit(value: str | None) -> str | None:
@@ -150,11 +167,13 @@ def _map_due_entries(rows: list[tuple]) -> list[DueSchedulerEntry]:
                 device_uuid=row[1],
                 device_number=row[2],
                 microcontroller_uuid=row[3],
-                microcontroller_power_provider_id=row[4],
-                slot_id=row[5],
-                use_power_threshold=bool(row[6]),
-                power_threshold_value=_to_float(row[7]),
-                power_threshold_unit=_normalize_unit(row[8]),
+                scheduler_id=row[4],
+                user_id=row[5],
+                microcontroller_power_provider_id=row[6],
+                slot_id=row[7],
+                use_power_threshold=bool(row[8]),
+                power_threshold_value=_to_float(row[9]),
+                power_threshold_unit=_normalize_unit(row[10]),
             )
         )
     return result

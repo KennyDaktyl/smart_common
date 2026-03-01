@@ -48,6 +48,7 @@ class PowerReadingEvent(BaseEvent):
 
 
 class DeviceCommandPayload(APIModel):
+    command_id: str | None = None
     device_id: int
     device_uuid: str
     device_number: int

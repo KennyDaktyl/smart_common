@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from uuid import UUID
 
+from smart_common.enums.scheduler import SchedulerCommandAction
+
 
 class DecisionKind(str, Enum):
     ALLOW_ON = "ALLOW_ON"
@@ -17,6 +19,8 @@ class DueSchedulerEntry:
     device_uuid: UUID
     device_number: int
     microcontroller_uuid: UUID
+    scheduler_id: int
+    user_id: int
     microcontroller_power_provider_id: int | None
     slot_id: int
     use_power_threshold: bool
@@ -37,3 +41,17 @@ class AckResult:
     ok: bool
     is_on: bool | None
     raw_data: dict
+
+
+@dataclass(frozen=True)
+class DispatchCommandEntry:
+    id: int
+    command_id: UUID
+    device_id: int
+    device_uuid: UUID
+    device_number: int
+    microcontroller_uuid: UUID
+    slot_id: int
+    scheduler_id: int
+    user_id: int
+    action: SchedulerCommandAction

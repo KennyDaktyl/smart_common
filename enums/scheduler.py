@@ -9,3 +9,17 @@ class SchedulerDayOfWeek(str, Enum):
     FRIDAY = "FRIDAY"
     SATURDAY = "SATURDAY"
     SUNDAY = "SUNDAY"
+
+
+class SchedulerCommandAction(str, Enum):
+    ON = "ON"
+    OFF = "OFF"
+
+
+class SchedulerCommandStatus(str, Enum):
+    PENDING = "PENDING"
+    SENT = "SENT"
+    ACK_OK = "ACK_OK"
+    ACK_FAIL = "ACK_FAIL"
+    TIMEOUT = "TIMEOUT"
+    CANCELLED = "CANCELLED"

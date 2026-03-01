@@ -302,8 +302,8 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             extra=self._log_context(device_id=device_id),
         )
         payload = self.get_production(device_id)
-        data = payload[0] if isinstance(payload, list) and payload else payload
-        if not isinstance(data, Mapping):
+        data = self._resolve_production_payload(payload)
+        if data is None:
             raise ProviderError(
                 message="Huawei getDevRealKpi returned unexpected payload",
                 details={"payload": payload},
@@ -322,22 +322,89 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         )
         return power_value
 
+    @staticmethod
+    def _resolve_production_payload(payload: Any) -> Mapping[str, Any] | None:
+        data = payload[0] if isinstance(payload, list) and payload else payload
+        if isinstance(data, Mapping):
+            return data
+        return None
+
+    def _safe_float(self, value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _extract_power_value(self, payload: Mapping[str, Any]) -> float | None:
         data_item_map = payload.get("dataItemMap")
         if isinstance(data_item_map, Mapping):
-            value = data_item_map.get("active_power")
-            if value is not None:
-                try:
-                    return float(value)
-                except (TypeError, ValueError):
-                    return None
-        active_power = payload.get("active_power")
-        if active_power is None:
-            return None
-        try:
-            return float(active_power)
-        except (TypeError, ValueError):
-            return None
+            active_power = self._safe_float(data_item_map.get("active_power"))
+            if active_power is not None:
+                return active_power
+
+        return self._safe_float(payload.get("active_power"))
+
+    @classmethod
+    def _prune_none(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            cleaned: dict[str, Any] = {}
+            for key, nested_value in value.items():
+                pruned_value = cls._prune_none(nested_value)
+                if pruned_value is not None:
+                    cleaned[key] = pruned_value
+            return cleaned or None
+
+        if isinstance(value, list):
+            cleaned_list = [cls._prune_none(item) for item in value]
+            compacted = [item for item in cleaned_list if item is not None]
+            return compacted or None
+
+        return value
+
+    def _build_metadata(self, data_item_map: Mapping[str, Any]) -> dict[str, Any]:
+        extra_data: dict[str, Any] = {
+            "temperature": self._safe_float(data_item_map.get("temperature")),
+            "efficiency": self._safe_float(data_item_map.get("efficiency")),
+            "power_factor": self._safe_float(data_item_map.get("power_factor")),
+            "frequency": self._safe_float(data_item_map.get("elec_freq")),
+            "reactive_power": self._safe_float(data_item_map.get("reactive_power")),
+            "day_energy": self._safe_float(data_item_map.get("day_cap")),
+            "total_energy": self._safe_float(data_item_map.get("total_cap")),
+            "mppt_power": self._safe_float(data_item_map.get("mppt_power")),
+            "voltage": {
+                "a": self._safe_float(data_item_map.get("a_u")),
+                "b": self._safe_float(data_item_map.get("b_u")),
+                "c": self._safe_float(data_item_map.get("c_u")),
+            },
+            "current": {
+                "a": self._safe_float(data_item_map.get("a_i")),
+                "b": self._safe_float(data_item_map.get("b_i")),
+                "c": self._safe_float(data_item_map.get("c_i")),
+            },
+            "pv_strings": {
+                "pv1": {
+                    "voltage": self._safe_float(data_item_map.get("pv1_u")),
+                    "current": self._safe_float(data_item_map.get("pv1_i")),
+                },
+                "pv2": {
+                    "voltage": self._safe_float(data_item_map.get("pv2_u")),
+                    "current": self._safe_float(data_item_map.get("pv2_i")),
+                },
+            },
+            "status": {
+                "run_state": data_item_map.get("run_state"),
+                "inverter_state": data_item_map.get("inverter_state"),
+            },
+            "raw_timestamp": data_item_map.get("open_time"),
+        }
+
+        cleaned = self._prune_none(extra_data)
+        if isinstance(cleaned, Mapping):
+            return dict(cleaned)
+        return {}
 
     # ------------------------------------------------------------------
     # Normalization
@@ -376,22 +443,59 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
                 details={"vendor": self.vendor.value},
             )
 
+<<<<<<< HEAD
         value = self.get_current_power(device_id)
         measured_at = datetime.now(timezone.utc)
         resolved_power_source = self._resolve_power_source(
             getattr(self, "provider_power_source", None)
         )
+=======
+        payload = self.get_production(device_id)
+        data = self._resolve_production_payload(payload)
+        if data is None:
+            raise ProviderError(
+                message="Huawei getDevRealKpi returned unexpected payload",
+                details={"payload": payload},
+            )
+
+        data_item_map = data.get("dataItemMap")
+        data_map: Mapping[str, Any] = (
+            data_item_map if isinstance(data_item_map, Mapping) else {}
+        )
+
+        active_power = self._extract_power_value(data)
+        if active_power is None:
+            raise ProviderError(
+                message="Huawei getDevRealKpi missing power value",
+                details={"payload": payload},
+            )
+
+        resolved_power_source = self._resolve_power_source(
+            getattr(self, "provider_power_source", None)
+        )
+        metadata = self._build_metadata(data_map)
+        metadata.setdefault("device_id", device_id)
+        metadata.setdefault("power_source", resolved_power_source.value)
+        metadata.setdefault("measurement_source", "active_power")
+>>>>>>> master
 
         logger.info(
             "Huawei measurement ready",
             extra=self._log_context(
                 device_id=device_id,
+<<<<<<< HEAD
                 value=value,
                 power_source=resolved_power_source.value,
+=======
+                value=active_power,
+                power_source=resolved_power_source.value,
+                metadata_keys=list(metadata.keys()),
+>>>>>>> master
             ),
         )
         return NormalizedMeasurement(
             provider_id=getattr(self, "provider_id", 0),
+<<<<<<< HEAD
             value=value,
             unit=PowerUnit.WATT.value,
             measured_at=measured_at,
@@ -400,4 +504,10 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
                 "power_source": resolved_power_source.value,
                 "measurement_source": "active_power",
             },
+=======
+            value=active_power,
+            unit=PowerUnit.KILOWATT.value,
+            measured_at=datetime.utcnow(),
+            metadata=metadata,
+>>>>>>> master
         )

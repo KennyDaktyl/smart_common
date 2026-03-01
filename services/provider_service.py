@@ -102,7 +102,6 @@ class ProviderService:
             )
         return provider
 
-    # ---------- CONFIG VALIDATION (TU JEST KLUCZ) ----------
 
     def _resolve_vendor(self, vendor: ProviderVendor | str | None) -> ProviderVendor:
         if vendor is None:

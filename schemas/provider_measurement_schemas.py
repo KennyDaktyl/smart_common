@@ -11,6 +11,7 @@ class ProviderMeasurementResponse(BaseModel):
     measured_value: Optional[float]
     measured_unit: Optional[str]
     metadata_payload: Dict[str, Any]
+    extra_data: Dict[str, Any]
 
     model_config = ConfigDict(from_attributes=True)
 

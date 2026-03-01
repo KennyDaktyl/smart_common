@@ -88,7 +88,11 @@ class Provider(Base):
     )
 
     power_source: Mapped[ProviderPowerSource | None] = mapped_column(
+<<<<<<< HEAD
         String(length=32),
+=======
+        Enum(ProviderPowerSource, name="provider_power_source_enum"),
+>>>>>>> master
         nullable=True,
         comment="Selects which provider metric is treated as the primary power value",
     )

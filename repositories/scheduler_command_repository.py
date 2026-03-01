@@ -68,39 +68,63 @@ class SchedulerCommandRepository:
         inflight_limit = max(1, max_inflight_per_microcontroller)
         ack_timeout = max(1.0, ack_timeout_sec)
 
-        inflight_by_mc = (
-            select(
-                SchedulerCommand.microcontroller_uuid.label("microcontroller_uuid"),
-                func.count(SchedulerCommand.id).label("inflight_count"),
-            )
-            .where(SchedulerCommand.status == SchedulerCommandStatus.SENT)
-            .group_by(SchedulerCommand.microcontroller_uuid)
-            .subquery()
-        )
-
-        stmt: Select = (
+        # NOTE:
+        # PostgreSQL does not allow FOR UPDATE with GROUP BY in the same query.
+        # We lock only pending rows first, then apply per-microcontroller inflight
+        # filtering in-memory using a separate aggregate query.
+        candidate_limit = max(limited * 4, limited)
+        lock_stmt: Select = (
             select(SchedulerCommand)
-            .outerjoin(
-                inflight_by_mc,
-                SchedulerCommand.microcontroller_uuid == inflight_by_mc.c.microcontroller_uuid,
-            )
             .where(
                 SchedulerCommand.status == SchedulerCommandStatus.PENDING,
                 or_(
                     SchedulerCommand.next_retry_at.is_(None),
                     SchedulerCommand.next_retry_at <= now_utc,
                 ),
-                func.coalesce(inflight_by_mc.c.inflight_count, 0) < inflight_limit,
             )
             .order_by(SchedulerCommand.minute_key.asc(), SchedulerCommand.id.asc())
-            .limit(limited)
+            .limit(candidate_limit)
             .with_for_update(skip_locked=True)
         )
-        commands = list(self.db.execute(stmt).scalars().all())
+        candidates = list(self.db.execute(lock_stmt).scalars().all())
+        if not candidates:
+            return []
+
+        microcontroller_ids = {item.microcontroller_uuid for item in candidates}
+        inflight_counts: dict[UUID, int] = {}
+        if microcontroller_ids:
+            inflight_rows = self.db.execute(
+                select(
+                    SchedulerCommand.microcontroller_uuid,
+                    func.count(SchedulerCommand.id),
+                )
+                .where(
+                    SchedulerCommand.status == SchedulerCommandStatus.SENT,
+                    SchedulerCommand.microcontroller_uuid.in_(microcontroller_ids),
+                )
+                .group_by(SchedulerCommand.microcontroller_uuid)
+            ).all()
+            inflight_counts = {
+                row[0]: int(row[1])
+                for row in inflight_rows
+            }
+
+        ack_deadline = now_utc + timedelta(seconds=ack_timeout)
+        chosen_per_micro: dict[UUID, int] = {}
+        commands: list[SchedulerCommand] = []
+        for candidate in candidates:
+            current_sent = inflight_counts.get(candidate.microcontroller_uuid, 0)
+            already_chosen = chosen_per_micro.get(candidate.microcontroller_uuid, 0)
+            if current_sent + already_chosen >= inflight_limit:
+                continue
+            commands.append(candidate)
+            chosen_per_micro[candidate.microcontroller_uuid] = already_chosen + 1
+            if len(commands) >= limited:
+                break
+
         if not commands:
             return []
 
-        ack_deadline = now_utc + timedelta(seconds=ack_timeout)
         result: list[DispatchCommandEntry] = []
         for command in commands:
             command.status = SchedulerCommandStatus.SENT

@@ -1,4 +1,5 @@
 from pydantic import Field
+from smart_common.providers.enums import ProviderPowerSource
 from smart_common.schemas.base import APIModel
 
 
@@ -40,4 +41,8 @@ class GoodWeProviderConfig(APIModel):
         default=0.0,
         ge=0,
         description="Minimum inverter power in W",
+    )
+    power_source: ProviderPowerSource = Field(
+        default=ProviderPowerSource.METER,
+        description="Primary power source used by this provider",
     )

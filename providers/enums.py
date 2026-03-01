@@ -15,6 +15,11 @@ class ProviderKind(str, Enum):
     POWER = "power"
 
 
+class ProviderPowerSource(str, Enum):
+    INVERTER = "inverter"
+    METER = "meter"
+
+
 class ProviderVendor(str, Enum):
     # API
     HUAWEI = "huawei"

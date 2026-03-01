@@ -9,7 +9,12 @@ from smart_common.enums.unit import PowerUnit
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.exceptions import ProviderError, ProviderFetchError
-from smart_common.providers.enums import ProviderKind, ProviderType, ProviderVendor
+from smart_common.providers.enums import (
+    ProviderKind,
+    ProviderPowerSource,
+    ProviderType,
+    ProviderVendor,
+)
 from smart_common.providers.provider_config.config import provider_settings
 
 logger = logging.getLogger(__name__)
@@ -219,6 +224,23 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
     # Public API
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _resolve_power_source(
+        power_source_hint: ProviderPowerSource | str | None,
+    ) -> ProviderPowerSource:
+        if isinstance(power_source_hint, ProviderPowerSource):
+            return power_source_hint
+
+        if isinstance(power_source_hint, str):
+            normalized = power_source_hint.strip().lower()
+            if normalized in {"meter", "power_meter", "grid_meter"}:
+                return ProviderPowerSource.METER
+            if normalized in {"inverter", "pv_inverter", "pv"}:
+                return ProviderPowerSource.INVERTER
+
+        # Huawei adapter currently uses inverter-level KPI payload.
+        return ProviderPowerSource.INVERTER
+
     def list_stations(self) -> list[Mapping[str, Any]]:
         logger.info("Huawei → list stations", extra=self._log_context())
 
@@ -356,15 +378,26 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
         value = self.get_current_power(device_id)
         measured_at = datetime.now(timezone.utc)
+        resolved_power_source = self._resolve_power_source(
+            getattr(self, "provider_power_source", None)
+        )
 
         logger.info(
             "Huawei measurement ready",
-            extra=self._log_context(device_id=device_id, value=value),
+            extra=self._log_context(
+                device_id=device_id,
+                value=value,
+                power_source=resolved_power_source.value,
+            ),
         )
         return NormalizedMeasurement(
             provider_id=getattr(self, "provider_id", 0),
             value=value,
             unit=PowerUnit.WATT.value,
             measured_at=measured_at,
-            metadata={"device_id": device_id},
+            metadata={
+                "device_id": device_id,
+                "power_source": resolved_power_source.value,
+                "measurement_source": "active_power",
+            },
         )

@@ -167,6 +167,14 @@ def create_adapter_for_provider(
     if getattr(provider, "external_id", None):
         setattr(adapter, "_external_id", provider.external_id)
 
+    if getattr(provider, "power_source", None):
+        power_source = provider.power_source
+        setattr(
+            adapter,
+            "provider_power_source",
+            power_source.value if hasattr(power_source, "value") else str(power_source),
+        )
+
     return adapter
 
 

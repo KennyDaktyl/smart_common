@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import ConfigDict, Field
 
+from smart_common.providers.enums import ProviderPowerSource
 from smart_common.schemas.base import APIModel
 
 
@@ -140,6 +141,15 @@ class HuaweiDetailsForm(APIModel):
         json_schema_extra={"x-ui": {"widget": "number", "required": True}},
     )
 
+    power_source: ProviderPowerSource = Field(
+        default=ProviderPowerSource.INVERTER,
+        title="Power source",
+        description="Primary source used for power measurement",
+        json_schema_extra={
+            "x-ui": {"widget": "select", "required": True},
+        },
+    )
+
 
 # ------------------------------------------------------------
 # DETAILS SUMMARY (API → prefill)
@@ -158,3 +168,4 @@ class HuaweiDetailsSummary(APIModel):
     optimizer_count: int | None
     max_power_kw: float = 10.0
     min_power_kw: float = 0.0
+    power_source: ProviderPowerSource = ProviderPowerSource.INVERTER

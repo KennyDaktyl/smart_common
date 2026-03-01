@@ -150,7 +150,7 @@ class HuaweiDeviceWizardStep(WizardStep):
             longitude=device.get("longitude"),
             software_version=device.get("software_version"),
             optimizer_count=device.get("optimizer_count"),
-        ).model_dump()
+        ).model_dump(mode="json")
 
         return WizardStepResult(
             next_step="details",
@@ -183,7 +183,7 @@ class HuaweiDetailsWizardStep(WizardStep):
 
         final_config = {
             **details,
-            **payload.model_dump(),
+            **payload.model_dump(mode="json"),
         }
 
         return WizardStepResult(

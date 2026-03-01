@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import Field, field_validator
 
+from smart_common.providers.enums import ProviderPowerSource
 from smart_common.schemas.base import APIModel
 
 
@@ -118,6 +119,15 @@ class GoodWeDetailsForm(APIModel):
         json_schema_extra={"x-ui": {"widget": "number", "required": True }},
     )
 
+    power_source: ProviderPowerSource = Field(
+        default=ProviderPowerSource.METER,
+        title="Power source",
+        description="Primary source used for power measurement",
+        json_schema_extra={
+            "x-ui": {"widget": "select", "required": True},
+        },
+    )
+
 
 class GoodWeDetailsSummary(APIModel):
     powerstation_id: str
@@ -129,3 +139,4 @@ class GoodWeDetailsSummary(APIModel):
     currency: str | None
     max_power_w: float = 20000.0
     min_power_w: float = 0.0
+    power_source: ProviderPowerSource = ProviderPowerSource.METER

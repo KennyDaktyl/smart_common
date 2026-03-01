@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 
 from smart_common.models.microcontroller import Microcontroller
 from smart_common.models.provider import Provider, ProviderCredential
-from smart_common.providers.enums import ProviderType, ProviderVendor
+from smart_common.providers.enums import (
+    ProviderPowerSource,
+    ProviderType,
+    ProviderVendor,
+)
 from smart_common.enums.unit import PowerUnit
 
 # ---- provider config schemas ----
@@ -114,6 +118,31 @@ class ProviderService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid provider vendor: {vendor}",
             )
+
+    def _resolve_power_source(
+        self,
+        power_source: ProviderPowerSource | str | None,
+    ) -> ProviderPowerSource | None:
+        if power_source is None:
+            return None
+
+        try:
+            return ProviderPowerSource(power_source)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid provider power_source: {power_source}",
+            )
+
+    @staticmethod
+    def _default_power_source_for_vendor(
+        vendor: ProviderVendor,
+    ) -> ProviderPowerSource | None:
+        if vendor == ProviderVendor.HUAWEI:
+            return ProviderPowerSource.INVERTER
+        if vendor == ProviderVendor.GOODWE:
+            return ProviderPowerSource.METER
+        return None
 
     def _resolve_definition(self, vendor: ProviderVendor) -> ProviderDefinition:
         definition = PROVIDER_DEFINITION_REGISTRY.get(vendor)
@@ -429,6 +458,7 @@ class ProviderService:
         allowed_fields = {
             "name",
             "unit",
+            "power_source",
             "value_min",
             "value_max",
             "enabled",
@@ -455,6 +485,11 @@ class ProviderService:
         if "config" in changes:
             meta = self._resolve_definition(provider.vendor)
             changes["config"] = self._validate_config(meta, changes["config"])
+
+        if "power_source" in changes:
+            changes["power_source"] = self._resolve_power_source(
+                changes["power_source"]
+            )
 
         if changes.get("enabled") is True and not self._is_provider_attached(
             db, provider
@@ -632,6 +667,7 @@ class ProviderService:
         self._ensure_unique_provider(db, user_id, vendor, external_id)
 
         validated_config = self._validate_config(definition, config)
+        config_power_source = validated_config.pop("power_source", None)
 
         payload["config"] = validated_config
 
@@ -669,6 +705,11 @@ class ProviderService:
         payload["external_id"] = external_id
         payload["enabled"] = False
         payload["expected_interval_sec"] = definition.default_expected_interval_sec
+        payload["power_source"] = (
+            self._resolve_power_source(payload.get("power_source"))
+            or self._resolve_power_source(config_power_source)
+            or self._default_power_source_for_vendor(vendor)
+        )
 
         if not payload.get("unit"):
             payload["unit"] = definition.default_unit

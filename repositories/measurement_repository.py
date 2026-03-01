@@ -72,6 +72,14 @@ def _deep_merge_dict(base: dict[str, Any], updates: dict[str, Any]) -> dict[str,
     return merged
 
 
+def _count_nested_entries(value: Any) -> int:
+    if isinstance(value, Mapping):
+        return len(value) + sum(_count_nested_entries(item) for item in value.values())
+    if isinstance(value, list):
+        return len(value) + sum(_count_nested_entries(item) for item in value)
+    return 1
+
+
 class MeasurementRepository(BaseRepository[ProviderMeasurement]):
     model = ProviderMeasurement
 
@@ -91,16 +99,19 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
 
         last_entry = self._fetch_last_measurement(provider.id)
         if last_entry and self._is_equivalent(last_entry, measurement):
+            incoming_metadata = _normalize_metadata(measurement.metadata)
             self._update_last_measurement(
                 last_entry,
                 measurement,
-                metadata_parts=self.split_metadata(measurement.metadata),
+                metadata_parts=self.split_metadata(incoming_metadata),
                 provider_id=provider.id,
                 poll_id=poll_id,
+                incoming_metadata=incoming_metadata,
             )
             return None
 
-        system_metadata, extra_data = self.split_metadata(measurement.metadata)
+        incoming_metadata = _normalize_metadata(measurement.metadata)
+        system_metadata, extra_data = self.split_metadata(incoming_metadata)
         entry = ProviderMeasurement(
             provider_id=provider.id,
             measured_at=measurement.measured_at,
@@ -119,8 +130,11 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 "provider_id": provider.id,
                 "poll_id": poll_id,
                 "action": "inserted",
+                "incoming_metadata_keys": sorted(incoming_metadata.keys()),
+                "incoming_metadata_size": _count_nested_entries(incoming_metadata),
                 "system_metadata_keys": sorted(system_metadata.keys()),
                 "extra_data_keys": sorted(extra_data.keys()),
+                "extra_data_size": _count_nested_entries(extra_data),
             },
         )
 
@@ -134,6 +148,7 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         metadata_parts: tuple[dict[str, Any], dict[str, Any]],
         provider_id: int,
         poll_id: str | None,
+        incoming_metadata: dict[str, Any],
     ) -> None:
         system_metadata, extra_data = metadata_parts
         entry.measured_at = measurement.measured_at
@@ -151,8 +166,11 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 "provider_id": provider_id,
                 "poll_id": poll_id,
                 "action": "refreshed",
+                "incoming_metadata_keys": sorted(incoming_metadata.keys()),
+                "incoming_metadata_size": _count_nested_entries(incoming_metadata),
                 "system_metadata_keys": sorted(system_metadata.keys()),
                 "extra_data_keys": sorted(extra_data.keys()),
+                "extra_data_size": _count_nested_entries(extra_data),
             },
         )
 

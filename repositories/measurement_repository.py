@@ -93,13 +93,18 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         measurement: NormalizedMeasurement,
         *,
         poll_id: str | None = None,
+        force_insert: bool = False,
     ) -> ProviderMeasurement | None:
         if provider.id is None:
             raise ValueError("provider must be persisted before saving measurements")
 
+        incoming_metadata = _normalize_metadata(measurement.metadata)
         last_entry = self._fetch_last_measurement(provider.id)
-        if last_entry and self._is_equivalent(last_entry, measurement):
-            incoming_metadata = _normalize_metadata(measurement.metadata)
+        if (
+            not force_insert
+            and last_entry
+            and self._is_equivalent(last_entry, measurement)
+        ):
             self._update_last_measurement(
                 last_entry,
                 measurement,
@@ -110,7 +115,6 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
             )
             return None
 
-        incoming_metadata = _normalize_metadata(measurement.metadata)
         system_metadata, extra_data = self.split_metadata(incoming_metadata)
         entry = ProviderMeasurement(
             provider_id=provider.id,
@@ -135,6 +139,7 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 "system_metadata_keys": sorted(system_metadata.keys()),
                 "extra_data_keys": sorted(extra_data.keys()),
                 "extra_data_size": _count_nested_entries(extra_data),
+                "force_insert": force_insert,
             },
         )
 

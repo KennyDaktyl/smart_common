@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import Query
@@ -94,6 +95,12 @@ class MicrocontrollerSensorsUpdateRequest(APIModel):
     assigned_sensors: List[str]
 
 
+class MicrocontrollerAgentCommand(str, Enum):
+    READ_CONFIG_FILES = "READ_CONFIG_FILES"
+    WRITE_CONFIG_FILES = "WRITE_CONFIG_FILES"
+    REBOOT_AGENT = "REBOOT_AGENT"
+
+
 # =====================================================
 # CONFIG
 # =====================================================
@@ -141,6 +148,23 @@ class MicrocontrollerConfigUpdateRequest(APIModel):
     active_low: Optional[bool] = None
     devices_config: Optional[List[DeviceConfig]] = None
     provider: Optional[MicrocontrollerProviderConfig] = None
+
+
+class MicrocontrollerAgentConfigFilesUpdateRequest(APIModel):
+    config_json: Dict[str, Any]
+    hardware_config_json: Dict[str, Any]
+
+
+class MicrocontrollerAgentCommandAck(APIModel):
+    ok: bool
+    command_id: str
+    command: MicrocontrollerAgentCommand
+    message: Optional[str] = None
+
+
+class MicrocontrollerAgentConfigFilesResponse(MicrocontrollerAgentCommandAck):
+    config_json: Dict[str, Any]
+    hardware_config_json: Dict[str, Any]
 
 
 # =====================================================

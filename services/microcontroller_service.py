@@ -1,6 +1,6 @@
 import logging
 from typing import Any, Callable, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -12,17 +12,25 @@ from smart_common.models.microcontroller_sensor_capability import (
     MicrocontrollerSensorCapability,
 )
 from smart_common.enums.sensor import SensorType
+from smart_common.events.device_events import MicrocontrollerCommandPayload
+from smart_common.events.event_dispatcher import EventDispatcher
 from smart_common.nats.client import NATSClient
-from smart_common.nats.event_helpers import stream_name
+from smart_common.nats.event_helpers import (
+    ack_subject_for_entity,
+    subject_for_entity,
+    stream_name,
+)
 from smart_common.nats.publisher import NatsPublisher
 from smart_common.providers.enums import ProviderKind, ProviderType
 from smart_common.providers.registry import resolve_sensor_type
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
 from smart_common.repositories.provider import ProviderRepository
 from smart_common.schemas.microcontroller_schema import (
+    MicrocontrollerAgentCommand,
+    MicrocontrollerAgentConfigFilesUpdateRequest,
+    MicrocontrollerAgentCommandAck,
     MicrocontrollerConfigUpdateRequest,
 )
-from smart_common.events.event_dispatcher import EventDispatcher
 
 
 class MicrocontrollerService:
@@ -206,6 +214,173 @@ class MicrocontrollerService:
         db.commit()
         db.refresh(mc)
         return mc
+
+    def _ack_command_id(self, event: dict) -> str | None:
+        if not isinstance(event, dict):
+            return None
+        data = event.get("data")
+        if not isinstance(data, dict):
+            return None
+        command_id = data.get("command_id")
+        if isinstance(command_id, str):
+            normalized = command_id.strip()
+            return normalized or None
+        return None
+
+    async def _publish_microcontroller_command(
+        self,
+        *,
+        microcontroller_uuid: UUID,
+        payload: MicrocontrollerCommandPayload,
+    ) -> dict[str, Any]:
+        subject = subject_for_entity(
+            microcontroller_uuid,
+            EventType.MICROCONTROLLER_COMMAND.value,
+        )
+        ack_subject = ack_subject_for_entity(
+            microcontroller_uuid,
+            EventType.MICROCONTROLLER_COMMAND.value,
+        )
+
+        self.logger.info(
+            "Publish microcontroller command | mc_uuid=%s subject=%s ack_subject=%s command=%s",
+            microcontroller_uuid,
+            subject,
+            ack_subject,
+            payload.command,
+        )
+
+        try:
+            result = await self.events.publish_event_and_wait_for_ack(
+                entity_type=EventType.MICROCONTROLLER_COMMAND.value,
+                entity_id=str(microcontroller_uuid),
+                event_type=EventType.MICROCONTROLLER_COMMAND,
+                data=payload,
+                predicate=lambda e: self._ack_command_id(e) == payload.command_id,
+                timeout=15.0,
+                subject=subject,
+                ack_subject=ack_subject,
+            )
+        except Exception as exc:
+            self.logger.error(
+                "Microcontroller command ACK failed | mc_uuid=%s command=%s error=%s",
+                microcontroller_uuid,
+                payload.command,
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"Microcontroller did not acknowledge command {payload.command}: {exc}",
+            ) from exc
+
+        ack_data = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(ack_data, dict):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Invalid microcontroller ACK payload",
+            )
+
+        if not ack_data.get("ok", False):
+            detail = ack_data.get("message")
+            message = detail if isinstance(detail, str) and detail else "Agent rejected command"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message,
+            )
+
+        return ack_data
+
+    async def get_agent_config_files(
+        self,
+        db: Session,
+        *,
+        microcontroller_id: int,
+    ) -> dict[str, Any]:
+        mc = self._repo(db).get_by_id(microcontroller_id)
+        if not mc:
+            raise HTTPException(status_code=404, detail="Microcontroller not found")
+
+        command_id = uuid4().hex
+        ack_data = await self._publish_microcontroller_command(
+            microcontroller_uuid=mc.uuid,
+            payload=MicrocontrollerCommandPayload(
+                command_id=command_id,
+                command=MicrocontrollerAgentCommand.READ_CONFIG_FILES.value,
+            ),
+        )
+
+        config_json = ack_data.get("config_json")
+        hardware_config_json = ack_data.get("hardware_config_json")
+        if not isinstance(config_json, dict) or not isinstance(hardware_config_json, dict):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Agent returned invalid config files payload",
+            )
+
+        return {
+            "ok": True,
+            "command_id": str(ack_data.get("command_id") or command_id),
+            "command": MicrocontrollerAgentCommand.READ_CONFIG_FILES,
+            "message": ack_data.get("message"),
+            "config_json": config_json,
+            "hardware_config_json": hardware_config_json,
+        }
+
+    async def update_agent_config_files(
+        self,
+        db: Session,
+        *,
+        microcontroller_id: int,
+        payload: MicrocontrollerAgentConfigFilesUpdateRequest,
+    ) -> MicrocontrollerAgentCommandAck:
+        mc = self._repo(db).get_by_id(microcontroller_id)
+        if not mc:
+            raise HTTPException(status_code=404, detail="Microcontroller not found")
+
+        command_id = uuid4().hex
+        ack_data = await self._publish_microcontroller_command(
+            microcontroller_uuid=mc.uuid,
+            payload=MicrocontrollerCommandPayload(
+                command_id=command_id,
+                command=MicrocontrollerAgentCommand.WRITE_CONFIG_FILES.value,
+                config_json=payload.config_json,
+                hardware_config_json=payload.hardware_config_json,
+            ),
+        )
+
+        return MicrocontrollerAgentCommandAck(
+            ok=True,
+            command_id=str(ack_data.get("command_id") or command_id),
+            command=MicrocontrollerAgentCommand.WRITE_CONFIG_FILES,
+            message=ack_data.get("message"),
+        )
+
+    async def reboot_agent(
+        self,
+        db: Session,
+        *,
+        microcontroller_id: int,
+    ) -> MicrocontrollerAgentCommandAck:
+        mc = self._repo(db).get_by_id(microcontroller_id)
+        if not mc:
+            raise HTTPException(status_code=404, detail="Microcontroller not found")
+
+        command_id = uuid4().hex
+        ack_data = await self._publish_microcontroller_command(
+            microcontroller_uuid=mc.uuid,
+            payload=MicrocontrollerCommandPayload(
+                command_id=command_id,
+                command=MicrocontrollerAgentCommand.REBOOT_AGENT.value,
+            ),
+        )
+
+        return MicrocontrollerAgentCommandAck(
+            ok=True,
+            command_id=str(ack_data.get("command_id") or command_id),
+            command=MicrocontrollerAgentCommand.REBOOT_AGENT,
+            message=ack_data.get("message"),
+        )
 
     async def set_power_provider(
         self,

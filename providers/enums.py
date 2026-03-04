@@ -19,6 +19,15 @@ class ProviderPowerSource(str, Enum):
     INVERTER = "inverter"
     METER = "meter"
 
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            for member in cls:
+                if member.value == normalized:
+                    return member
+        return None
+
 
 class ProviderVendor(str, Enum):
     # API

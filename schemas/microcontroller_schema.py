@@ -46,6 +46,7 @@ class UserEmbeddedResponse(ORMModel):
 
 
 class MicrocontrollerCreateRequest(APIModel):
+    user_id = Optional[int] | None
     name: str = Field(
         ...,
         description="Display name for the microcontroller",

@@ -102,7 +102,7 @@ class WizardService:
             payload_values = {}
         else:
             model = schema_cls.model_validate(payload or {})
-            payload_values = model.model_dump()
+            payload_values = model.model_dump(mode="json")
 
         logger.info(
             "Wizard step payload validated",
@@ -287,7 +287,9 @@ class WizardService:
 
         config_schema = definition.config_schema
         if config_schema:
-            validated = config_schema.model_validate(final_config).model_dump()
+            validated = config_schema.model_validate(final_config).model_dump(
+                mode="json"
+            )
             logger.info(
                 "Wizard final_config validated",
                 extra={"validated_config": validated},

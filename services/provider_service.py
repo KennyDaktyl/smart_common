@@ -102,7 +102,6 @@ class ProviderService:
             )
         return provider
 
-    # ---------- CONFIG VALIDATION (TU JEST KLUCZ) ----------
 
     def _resolve_vendor(self, vendor: ProviderVendor | str | None) -> ProviderVendor:
         if vendor is None:
@@ -667,6 +666,7 @@ class ProviderService:
         self._ensure_unique_provider(db, user_id, vendor, external_id)
 
         validated_config = self._validate_config(definition, config)
+        config_power_source = validated_config.pop("power_source", None)
 
         payload["config"] = validated_config
 
@@ -706,6 +706,7 @@ class ProviderService:
         payload["expected_interval_sec"] = definition.default_expected_interval_sec
         payload["power_source"] = (
             self._resolve_power_source(payload.get("power_source"))
+            or self._resolve_power_source(config_power_source)
             or self._default_power_source_for_vendor(vendor)
         )
 

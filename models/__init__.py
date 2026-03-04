@@ -6,6 +6,7 @@ from smart_common.models.device_schedule import DeviceSchedule  # noqa: F401
 from smart_common.models.provider import Provider  # noqa: F401
 from smart_common.models.microcontroller import Microcontroller  # noqa: F401
 from smart_common.models.scheduler import Scheduler  # noqa: F401
+from smart_common.models.scheduler_command import SchedulerCommand  # noqa: F401
 from smart_common.models.scheduler_slot import SchedulerSlot  # noqa: F401
 from smart_common.models.microcontroller_sensor_capability import (  # noqa: F401
     MicrocontrollerSensorCapability,

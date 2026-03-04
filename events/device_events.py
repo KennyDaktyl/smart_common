@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from smart_common.enums.event import EventType
 from smart_common.schemas.base import APIModel
@@ -48,6 +48,7 @@ class PowerReadingEvent(BaseEvent):
 
 
 class DeviceCommandPayload(APIModel):
+    command_id: str | None = None
     device_id: int
     device_uuid: str
     device_number: int
@@ -58,6 +59,17 @@ class DeviceCommandPayload(APIModel):
 
 class DeviceCommandEvent(BaseEvent):
     payload: DeviceCommandPayload
+
+
+class MicrocontrollerCommandPayload(APIModel):
+    command_id: str
+    command: str
+    config_json: Optional[Dict[str, Any]] = None
+    hardware_config_json: Optional[Dict[str, Any]] = None
+
+
+class MicrocontrollerCommandEvent(BaseEvent):
+    payload: MicrocontrollerCommandPayload
 
 
 class DeviceDeletePayload(APIModel):
@@ -76,5 +88,6 @@ class DeviceEventUnion(BaseEvent):
         DeviceUpdatedPayload,
         PowerReadingPayload,
         DeviceCommandPayload,
+        MicrocontrollerCommandPayload,
         DeviceDeletePayload,
     ]

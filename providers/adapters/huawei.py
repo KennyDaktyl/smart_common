@@ -30,6 +30,9 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
         username: str,
         password: str,
         *,
+        provider_id: int,
+        provider_external_id: str,
+        provider_power_source: ProviderPowerSource,
         base_url: str | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
@@ -43,6 +46,9 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
         self.username = username
         self.password = password
+        self.provider_id = provider_id
+        self.provider_external_id = provider_external_id
+        self.provider_power_source = provider_power_source
         self._logged_in = False
         self._token_expires_at: datetime | None = None
 
@@ -364,6 +370,34 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
         return value
 
+    def _extract_pv_strings(self, data_item_map: Mapping[str, Any]) -> dict[str, Any]:
+        pv_strings: dict[str, Any] = {}
+        for index in range(1, 37):
+            voltage = self._safe_float(data_item_map.get(f"pv{index}_u"))
+            current = self._safe_float(data_item_map.get(f"pv{index}_i"))
+
+            if voltage is None and current is None:
+                continue
+
+            if voltage == 0.0 and current == 0.0:
+                continue
+
+            pv_strings[f"pv{index}"] = {
+                "voltage": voltage,
+                "current": current,
+            }
+
+        return pv_strings
+
+    def _extract_mppt_capacities(self, data_item_map: Mapping[str, Any]) -> dict[str, Any]:
+        capacities: dict[str, Any] = {}
+        for index in range(1, 11):
+            key = f"mppt_{index}_cap"
+            value = self._safe_float(data_item_map.get(key))
+            if value is not None:
+                capacities[key] = value
+        return capacities
+
     def _build_metadata(self, data_item_map: Mapping[str, Any]) -> dict[str, Any]:
         extra_data: dict[str, Any] = {
             "temperature": self._safe_float(data_item_map.get("temperature")),
@@ -371,29 +405,29 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             "power_factor": self._safe_float(data_item_map.get("power_factor")),
             "frequency": self._safe_float(data_item_map.get("elec_freq")),
             "reactive_power": self._safe_float(data_item_map.get("reactive_power")),
-            "day_energy": self._safe_float(data_item_map.get("day_cap")),
-            "total_energy": self._safe_float(data_item_map.get("total_cap")),
+            "energy": {
+                "day": self._safe_float(data_item_map.get("day_cap")),
+                "total": self._safe_float(data_item_map.get("total_cap")),
+                "mppt_total": self._safe_float(data_item_map.get("mppt_total_cap")),
+                "mppt_capacities": self._extract_mppt_capacities(data_item_map),
+            },
             "mppt_power": self._safe_float(data_item_map.get("mppt_power")),
             "voltage": {
                 "a": self._safe_float(data_item_map.get("a_u")),
                 "b": self._safe_float(data_item_map.get("b_u")),
                 "c": self._safe_float(data_item_map.get("c_u")),
             },
+            "line_voltage": {
+                "ab": self._safe_float(data_item_map.get("ab_u")),
+                "bc": self._safe_float(data_item_map.get("bc_u")),
+                "ca": self._safe_float(data_item_map.get("ca_u")),
+            },
             "current": {
                 "a": self._safe_float(data_item_map.get("a_i")),
                 "b": self._safe_float(data_item_map.get("b_i")),
                 "c": self._safe_float(data_item_map.get("c_i")),
             },
-            "pv_strings": {
-                "pv1": {
-                    "voltage": self._safe_float(data_item_map.get("pv1_u")),
-                    "current": self._safe_float(data_item_map.get("pv1_i")),
-                },
-                "pv2": {
-                    "voltage": self._safe_float(data_item_map.get("pv2_u")),
-                    "current": self._safe_float(data_item_map.get("pv2_i")),
-                },
-            },
+            "pv_strings": self._extract_pv_strings(data_item_map),
             "status": {
                 "run_state": data_item_map.get("run_state"),
                 "inverter_state": data_item_map.get("inverter_state"),
@@ -436,7 +470,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
 
     def fetch_measurement(self) -> NormalizedMeasurement:
         logger.info("Huawei fetching measurement", extra=self._log_context())
-        device_id = getattr(self, "provider_external_id", None)
+        device_id = self.provider_external_id
         if not device_id:
             raise ProviderError(
                 message="Huawei adapter missing device identifier",
@@ -464,7 +498,7 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             )
 
         resolved_power_source = self._resolve_power_source(
-            getattr(self, "provider_power_source", None)
+            self.provider_power_source
         )
         metadata = self._build_metadata(data_map)
         metadata.setdefault("device_id", device_id)
@@ -477,13 +511,13 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
                 device_id=device_id,
                 value=active_power,
                 power_source=resolved_power_source.value,
-                metadata_keys=list(metadata.keys()),
+                metadata_keys=sorted(metadata.keys()),
             ),
         )
         return NormalizedMeasurement(
-            provider_id=getattr(self, "provider_id", 0),
+            provider_id=self.provider_id,
             value=active_power,
             unit=PowerUnit.KILOWATT.value,
-            measured_at=datetime.utcnow(),
+            measured_at=datetime.now(timezone.utc),
             metadata=metadata,
         )

@@ -93,7 +93,7 @@ class GoodWePowerStationWizardStep(WizardStep):
             battery_capacity_kwh=info.get("battery_capacity"),
             powerstation_type=info.get("powerstation_type"),
             currency=kpi.get("currency"),
-        ).model_dump()
+        ).model_dump(mode="json")
 
         return WizardStepResult(
             next_step="details",
@@ -121,7 +121,7 @@ class GoodWeDetailsWizardStep(WizardStep):
         if not details:
             raise WizardSessionStateError("Missing GoodWe details")
 
-        form_data = payload.model_dump()
+        form_data = payload.model_dump(mode="json")
 
         final_config = {
             **details,

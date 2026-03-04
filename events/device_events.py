@@ -66,6 +66,7 @@ class MicrocontrollerCommandPayload(APIModel):
     command: str
     config_json: Optional[Dict[str, Any]] = None
     hardware_config_json: Optional[Dict[str, Any]] = None
+    env_file_content: Optional[str] = None
 
 
 class MicrocontrollerCommandEvent(BaseEvent):

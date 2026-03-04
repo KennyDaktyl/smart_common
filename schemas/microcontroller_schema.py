@@ -153,6 +153,7 @@ class MicrocontrollerConfigUpdateRequest(APIModel):
 class MicrocontrollerAgentConfigFilesUpdateRequest(APIModel):
     config_json: Dict[str, Any]
     hardware_config_json: Dict[str, Any]
+    env_file_content: str
 
 
 class MicrocontrollerAgentCommandAck(APIModel):
@@ -165,6 +166,7 @@ class MicrocontrollerAgentCommandAck(APIModel):
 class MicrocontrollerAgentConfigFilesResponse(MicrocontrollerAgentCommandAck):
     config_json: Dict[str, Any]
     hardware_config_json: Dict[str, Any]
+    env_file_content: str
 
 
 # =====================================================

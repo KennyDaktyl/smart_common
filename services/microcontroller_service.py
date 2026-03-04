@@ -312,10 +312,17 @@ class MicrocontrollerService:
 
         config_json = ack_data.get("config_json")
         hardware_config_json = ack_data.get("hardware_config_json")
+        env_file_content = ack_data.get("env_file_content")
+
         if not isinstance(config_json, dict) or not isinstance(hardware_config_json, dict):
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Agent returned invalid config files payload",
+            )
+        if not isinstance(env_file_content, str):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Agent version does not support .env management yet",
             )
 
         return {
@@ -325,6 +332,7 @@ class MicrocontrollerService:
             "message": ack_data.get("message"),
             "config_json": config_json,
             "hardware_config_json": hardware_config_json,
+            "env_file_content": env_file_content,
         }
 
     async def update_agent_config_files(
@@ -346,6 +354,7 @@ class MicrocontrollerService:
                 command=MicrocontrollerAgentCommand.WRITE_CONFIG_FILES.value,
                 config_json=payload.config_json,
                 hardware_config_json=payload.hardware_config_json,
+                env_file_content=payload.env_file_content,
             ),
         )
 

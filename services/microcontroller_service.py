@@ -391,6 +391,32 @@ class MicrocontrollerService:
             message=ack_data.get("message"),
         )
 
+    async def update_agent(
+        self,
+        db: Session,
+        *,
+        microcontroller_id: int,
+    ) -> MicrocontrollerAgentCommandAck:
+        mc = self._repo(db).get_by_id(microcontroller_id)
+        if not mc:
+            raise HTTPException(status_code=404, detail="Microcontroller not found")
+
+        command_id = uuid4().hex
+        ack_data = await self._publish_microcontroller_command(
+            microcontroller_uuid=mc.uuid,
+            payload=MicrocontrollerCommandPayload(
+                command_id=command_id,
+                command=MicrocontrollerAgentCommand.UPDATE_AGENT.value,
+            ),
+        )
+
+        return MicrocontrollerAgentCommandAck(
+            ok=True,
+            command_id=str(ack_data.get("command_id") or command_id),
+            command=MicrocontrollerAgentCommand.UPDATE_AGENT,
+            message=ack_data.get("message"),
+        )
+
     async def set_power_provider(
         self,
         db: Session,

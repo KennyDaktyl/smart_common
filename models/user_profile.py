@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.orm import relationship
 
 from smart_common.core.db import Base
@@ -22,6 +22,9 @@ class UserProfile(Base):
     company_name = Column(String(255), nullable=True)
     company_vat = Column(String(64), nullable=True)
     company_address = Column(String(512), nullable=True)
+    energy_price_amount = Column(Numeric(12, 6), nullable=True)
+    energy_price_currency = Column(String(8), nullable=True)
+    energy_price_unit = Column(String(16), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

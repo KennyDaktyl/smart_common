@@ -15,10 +15,13 @@ class UserProfileBase(APIModel):
     company_name: Optional[str] = Field(None, max_length=255)
     company_vat: Optional[str] = Field(None, max_length=64)
     company_address: Optional[str] = Field(None, max_length=512)
+    energy_price_amount: Optional[float] = Field(None, gt=0)
+    energy_price_currency: Optional[str] = Field(None, max_length=8)
+    energy_price_unit: Optional[str] = Field(None, max_length=16)
 
 
 class UserProfileUpdate(UserProfileBase):
-    id: int
+    pass
 
 
 class UserProfileResponse(UserProfileBase, ORMModel):

@@ -56,6 +56,19 @@ class DeviceEventService:
         end = start + timedelta(days=1) - timedelta(microseconds=1)
         return start, end
 
+    def _resolve_power_unit(self, device: Device) -> str | None:
+        microcontroller = getattr(device, "microcontroller", None)
+        provider = getattr(microcontroller, "power_provider", None)
+        provider_unit = getattr(provider, "unit", None)
+        return getattr(provider_unit, "value", None)
+
+    def _resolve_energy_unit(self, power_unit: str | None) -> str | None:
+        if power_unit == "W":
+            return "Wh"
+        if power_unit == "kW":
+            return "kWh"
+        return None
+
     def list_device_events(
         self,
         *,
@@ -85,34 +98,44 @@ class DeviceEventService:
 
         total_seconds_on = 0.0
         energy = Decimal("0")
+        power_unit = self._resolve_power_unit(device)
+        energy_unit = self._resolve_energy_unit(power_unit)
+        rated_power = (
+            Decimal(str(device.rated_power))
+            if device.rated_power is not None
+            else None
+        )
 
-        if device.rated_power is None:
-            energy_unit = None
-        else:
-            rated_power = Decimal(device.rated_power)  # zakładamy że to kW
-            energy_unit = "kWh"
+        for idx, event in enumerate(schema_events):
+            current_ts = self._to_utc_aware(event.created_at)
 
-            for idx, event in enumerate(schema_events):
-                current_ts = self._to_utc_aware(event.created_at)
+            next_ts = (
+                self._to_utc_aware(schema_events[idx + 1].created_at)
+                if idx + 1 < len(schema_events)
+                else end
+            )
 
-                next_ts = (
-                    self._to_utc_aware(schema_events[idx + 1].created_at)
-                    if idx + 1 < len(schema_events)
-                    else end
-                )
+            if not event.pin_state:
+                continue
 
-                if event.pin_state:
-                    seconds = max(0, (next_ts - current_ts).total_seconds())
-                    total_seconds_on += seconds
+            seconds = max(0, (next_ts - current_ts).total_seconds())
+            total_seconds_on += seconds
 
-                    hours = Decimal(str(seconds)) / Decimal("3600")
-                    energy += rated_power * hours
+            if rated_power is None or energy_unit is None:
+                continue
+
+            hours = Decimal(str(seconds)) / Decimal("3600")
+            energy += rated_power * hours
 
         return {
             "events": schema_events,
             "total_minutes_on": int(total_seconds_on // 60),
             "energy": round(float(energy), 3) if energy > 0 else None,
             "energy_unit": energy_unit,
-            "power_unit": "kW" if device.rated_power else None,
-            "rated_power": (float(device.rated_power) if device.rated_power else None),
+            "power_unit": power_unit if device.rated_power is not None else None,
+            "rated_power": (
+                float(device.rated_power)
+                if device.rated_power is not None
+                else None
+            ),
         }

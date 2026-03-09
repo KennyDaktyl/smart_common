@@ -399,9 +399,16 @@ class MicrocontrollerService:
             if getattr(microcontroller, "power_provider", None)
             else None
         )
+        previous_provider_unit = (
+            microcontroller.power_provider.unit.value
+            if getattr(microcontroller, "power_provider", None)
+            and getattr(microcontroller.power_provider, "unit", None) is not None
+            else None
+        )
 
         next_provider_id: int | None = None
         next_provider_uuid = str(provider_uuid) if provider_uuid is not None else None
+        next_provider_unit: str | None = None
 
         if provider_uuid is not None:
             provider = self._provider_repo(db).get_for_user_by_uuid(provider_uuid, user_id)
@@ -412,13 +419,18 @@ class MicrocontrollerService:
                 )
             next_provider_id = provider.id
             next_provider_uuid = str(provider.uuid)
+            next_provider_unit = provider.unit.value if provider.unit is not None else None
 
-        if previous_provider_uuid == next_provider_uuid:
+        if (
+            previous_provider_uuid == next_provider_uuid
+            and previous_provider_unit == next_provider_unit
+        ):
             self.logger.info(
                 "Provider already set for microcontroller",
                 extra={
                     "microcontroller_uuid": str(microcontroller.uuid),
                     "provider_uuid": next_provider_uuid,
+                    "unit": next_provider_unit,
                 },
             )
             return microcontroller
@@ -427,6 +439,7 @@ class MicrocontrollerService:
             microcontroller_uuid=str(microcontroller.uuid),
             provider_uuid=next_provider_uuid,
             previous_provider_uuid=previous_provider_uuid,
+            unit=next_provider_unit,
         )
 
         microcontroller.power_provider_id = next_provider_id
@@ -439,6 +452,8 @@ class MicrocontrollerService:
                 "microcontroller_uuid": str(microcontroller.uuid),
                 "previous_provider_uuid": previous_provider_uuid,
                 "provider_uuid": next_provider_uuid,
+                "previous_unit": previous_provider_unit,
+                "unit": next_provider_unit,
                 "ack_changed": ack_data.get("changed"),
             },
         )
@@ -451,6 +466,7 @@ class MicrocontrollerService:
         microcontroller_uuid: str,
         provider_uuid: str | None,
         previous_provider_uuid: str | None,
+        unit: str | None,
     ) -> dict:
         event_type = EventType.PROVIDER_UPDATED
         subject = f"{stream_name()}.{microcontroller_uuid}.command.provider_updated"
@@ -460,11 +476,12 @@ class MicrocontrollerService:
                 entity_type="microcontroller",
                 entity_id=microcontroller_uuid,
                 event_type=event_type,
-                data={"provider_uuid": provider_uuid},
+                data={"provider_uuid": provider_uuid, "unit": unit},
                 predicate=lambda payload: self._provider_updated_ack_matches(
                     payload=payload,
                     microcontroller_uuid=microcontroller_uuid,
                     provider_uuid=provider_uuid,
+                    unit=unit,
                 ),
                 timeout=10.0,
                 subject=subject,
@@ -537,6 +554,7 @@ class MicrocontrollerService:
         payload: dict,
         microcontroller_uuid: str,
         provider_uuid: str | None,
+        unit: str | None,
     ) -> bool:
         if not isinstance(payload, dict):
             return False
@@ -550,8 +568,15 @@ class MicrocontrollerService:
 
         incoming_provider_uuid = data.get("provider_uuid")
         if provider_uuid is None:
-            return incoming_provider_uuid is None
-        return str(incoming_provider_uuid) == provider_uuid
+            if incoming_provider_uuid is not None:
+                return False
+        elif str(incoming_provider_uuid) != provider_uuid:
+            return False
+
+        incoming_unit = data.get("unit")
+        if unit is None:
+            return incoming_unit is None
+        return str(incoming_unit) == unit
 
     # def __init__(
     #     self,

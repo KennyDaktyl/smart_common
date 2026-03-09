@@ -4,6 +4,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from smart_common.enums.provider_telemetry import (
+    ProviderTelemetryCapability,
+    TelemetryAggregationMode,
+    TelemetryChartType,
+)
+
 
 class ProviderMeasurementResponse(BaseModel):
     id: int
@@ -12,6 +18,17 @@ class ProviderMeasurementResponse(BaseModel):
     measured_unit: Optional[str]
     metadata_payload: Dict[str, Any]
     extra_data: Dict[str, Any]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProviderTelemetryMetricDefinition(BaseModel):
+    metric_key: str
+    label: str
+    unit: Optional[str]
+    chart_type: TelemetryChartType
+    aggregation_mode: TelemetryAggregationMode
+    capability_tag: ProviderTelemetryCapability | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,3 +85,26 @@ class ProviderCurrentHourPoolOut(BaseModel):
     available_energy: float
     provider_includes_device_consumption: bool
     devices_considered: int
+
+
+class ProviderMetricPoint(BaseModel):
+    timestamp: datetime
+    value: float
+
+
+class ProviderMetricHourlyPoint(BaseModel):
+    hour: datetime
+    value: float
+
+
+class ProviderMetricSeriesOut(BaseModel):
+    metric_key: str
+    label: str
+    unit: Optional[str]
+    source_unit: Optional[str] = None
+    chart_type: TelemetryChartType
+    aggregation_mode: TelemetryAggregationMode
+    capability_tag: ProviderTelemetryCapability | None = None
+    date: str
+    entries: List[ProviderMetricPoint] = []
+    hours: List[ProviderMetricHourlyPoint] = []

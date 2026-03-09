@@ -8,8 +8,15 @@ from typing import Any, Iterable
 from sqlalchemy import select
 
 from smart_common.models.provider import Provider
+from smart_common.models.provider_metric_definition import ProviderMetricDefinition
+from smart_common.models.provider_metric_sample import ProviderMetricSample
 from smart_common.models.provider_measurement import ProviderMeasurement
 from smart_common.repositories.base import BaseRepository
+from smart_common.enums.provider_telemetry import ProviderTelemetryCapability
+from smart_common.enums.provider_telemetry import (
+    TelemetryAggregationMode,
+    TelemetryChartType,
+)
 from smart_common.schemas.normalized_measurement import NormalizedMeasurement
 
 logger = logging.getLogger(__name__)
@@ -127,6 +134,11 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
 
         self.session.add(entry)
         self.session.flush()
+        self._sync_metric_samples(
+            provider=provider,
+            entry=entry,
+            measurement=measurement,
+        )
 
         logger.info(
             "Measurement persistence check",
@@ -164,6 +176,11 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         entry.extra_data = _deep_merge_dict(existing_extra_data, extra_data)
         self.session.add(entry)
         self.session.flush()
+        self._replace_metric_samples(
+            provider=provider_id,
+            entry=entry,
+            measurement=measurement,
+        )
 
         logger.info(
             "Measurement persistence check",
@@ -230,6 +247,53 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
 
         return float(last_entry.measured_value) == measurement.value
 
+    def list_metric_definitions(
+        self,
+        *,
+        provider_id: int,
+    ) -> list[ProviderMetricDefinition]:
+        return (
+            self.session.query(ProviderMetricDefinition)
+            .filter(ProviderMetricDefinition.provider_id == provider_id)
+            .order_by(ProviderMetricDefinition.metric_key.asc())
+            .all()
+        )
+
+    def get_metric_definition(
+        self,
+        *,
+        provider_id: int,
+        metric_key: str,
+    ) -> ProviderMetricDefinition | None:
+        return (
+            self.session.query(ProviderMetricDefinition)
+            .filter(
+                ProviderMetricDefinition.provider_id == provider_id,
+                ProviderMetricDefinition.metric_key == metric_key,
+            )
+            .first()
+        )
+
+    def list_metric_samples(
+        self,
+        *,
+        provider_id: int,
+        metric_key: str,
+        date_start: datetime,
+        date_end: datetime,
+    ) -> list[ProviderMetricSample]:
+        return (
+            self.session.query(ProviderMetricSample)
+            .filter(
+                ProviderMetricSample.provider_id == provider_id,
+                ProviderMetricSample.metric_key == metric_key,
+                ProviderMetricSample.measured_at >= date_start,
+                ProviderMetricSample.measured_at <= date_end,
+            )
+            .order_by(ProviderMetricSample.measured_at)
+            .all()
+        )
+
     def list_power_samples(
         self,
         *,
@@ -289,3 +353,128 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
             .order_by(ProviderMeasurement.measured_at.desc())
             .first()
         )
+
+    def _replace_metric_samples(
+        self,
+        *,
+        provider: int,
+        entry: ProviderMeasurement,
+        measurement: NormalizedMeasurement,
+    ) -> None:
+        self.session.query(ProviderMetricSample).filter(
+            ProviderMetricSample.provider_measurement_id == entry.id,
+        ).delete(synchronize_session=False)
+        self.session.flush()
+        persisted_provider = self.session.get(Provider, provider)
+        if persisted_provider is None:
+            return
+        self._sync_metric_samples(
+            provider=persisted_provider,
+            entry=entry,
+            measurement=measurement,
+        )
+
+    def _sync_metric_samples(
+        self,
+        *,
+        provider: Provider,
+        entry: ProviderMeasurement,
+        measurement: NormalizedMeasurement,
+    ) -> None:
+        capabilities_seen: set[ProviderTelemetryCapability] = set()
+
+        for metric in measurement.extra_metrics:
+            if metric.value is None:
+                continue
+
+            definition = self._upsert_metric_definition(
+                provider_id=provider.id,
+                metric_key=metric.key,
+                label=metric.label,
+                unit=metric.unit,
+                chart_type=metric.chart_type,
+                aggregation_mode=metric.aggregation_mode,
+                capability_tag=metric.capability_tag,
+            )
+            sample = ProviderMetricSample(
+                provider_id=provider.id,
+                provider_measurement_id=entry.id,
+                metric_key=definition.metric_key,
+                measured_at=measurement.measured_at,
+                value=metric.value,
+                unit=metric.unit,
+                metadata_payload=_normalize_metadata(metric.metadata),
+            )
+            self.session.add(sample)
+
+            if metric.capability_tag is not None:
+                capabilities_seen.add(metric.capability_tag)
+
+        if capabilities_seen:
+            self._promote_provider_capabilities(
+                provider=provider,
+                capabilities=capabilities_seen,
+            )
+
+        self.session.flush()
+
+    def _upsert_metric_definition(
+        self,
+        *,
+        provider_id: int,
+        metric_key: str,
+        label: str,
+        unit: str | None,
+        chart_type: TelemetryChartType,
+        aggregation_mode: TelemetryAggregationMode,
+        capability_tag: ProviderTelemetryCapability | None,
+    ) -> ProviderMetricDefinition:
+        definition = (
+            self.session.query(ProviderMetricDefinition)
+            .filter(
+                ProviderMetricDefinition.provider_id == provider_id,
+                ProviderMetricDefinition.metric_key == metric_key,
+            )
+            .first()
+        )
+
+        if definition is None:
+            definition = ProviderMetricDefinition(
+                provider_id=provider_id,
+                metric_key=metric_key,
+                label=label,
+                unit=unit,
+                chart_type=chart_type,
+                aggregation_mode=aggregation_mode,
+                capability_tag=capability_tag,
+            )
+        else:
+            definition.label = label
+            definition.unit = unit
+            definition.chart_type = chart_type
+            definition.aggregation_mode = aggregation_mode
+            definition.capability_tag = capability_tag
+
+        self.session.add(definition)
+        self.session.flush()
+        return definition
+
+    def _promote_provider_capabilities(
+        self,
+        *,
+        provider: Provider,
+        capabilities: set[ProviderTelemetryCapability],
+    ) -> None:
+        if (
+            ProviderTelemetryCapability.POWER_METER in capabilities
+            and not provider.has_power_meter
+        ):
+            provider.has_power_meter = True
+
+        if (
+            ProviderTelemetryCapability.ENERGY_STORAGE in capabilities
+            and not provider.has_energy_storage
+        ):
+            provider.has_energy_storage = True
+
+        self.session.add(provider)

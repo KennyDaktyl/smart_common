@@ -102,6 +102,12 @@ class Provider(Base):
         nullable=True,
         comment="Expected max interval (seconds) between measurements",
     )
+    has_power_meter: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    has_energy_storage: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
     # ---------- lifecycle ----------
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -134,6 +140,17 @@ class Provider(Base):
 
     measurements = relationship(
         "ProviderMeasurement",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+    )
+    telemetry_metrics = relationship(
+        "ProviderMetricDefinition",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        order_by="ProviderMetricDefinition.metric_key",
+    )
+    metric_samples = relationship(
+        "ProviderMetricSample",
         back_populates="provider",
         cascade="all, delete-orphan",
     )

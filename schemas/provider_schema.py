@@ -14,6 +14,7 @@ from smart_common.providers.enums import (
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.provider_measurement_schemas import (
     ProviderMeasurementResponse,
+    ProviderTelemetryMetricDefinition,
 )
 
 
@@ -102,9 +103,14 @@ class ProviderResponse(ORMModel):
     value_max: Optional[float]
 
     default_expected_interval_sec: Optional[int]
+    has_power_meter: bool
+    has_energy_storage: bool
 
     enabled: bool
     config: Dict[str, Any]
+    telemetry_metrics: list[ProviderTelemetryMetricDefinition] = Field(
+        default_factory=list
+    )
 
     created_at: datetime
     updated_at: datetime

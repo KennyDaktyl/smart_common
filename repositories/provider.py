@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from smart_common.models.provider import Provider
 from smart_common.providers.enums import ProviderKind, ProviderVendor
@@ -15,7 +15,13 @@ class ProviderRepository(BaseRepository[Provider]):
     default_order_by = Provider.id.asc()
 
     def list_for_user(self, user_id: int) -> list[Provider]:
-        return self.list(filters={"user_id": user_id}, order_by=self.default_order_by)
+        return (
+            self.session.query(self.model)
+            .filter(self.model.user_id == user_id)
+            .options(selectinload(self.model.telemetry_metrics))
+            .order_by(self.default_order_by)
+            .all()
+        )
 
     def list_power_for_user(self, user_id: int) -> list[Provider]:
         return (
@@ -24,6 +30,7 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.user_id == user_id,
                 self.model.kind == ProviderKind.POWER,
             )
+            .options(selectinload(self.model.telemetry_metrics))
             .order_by(self.default_order_by)
             .all()
         )
@@ -35,7 +42,10 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.enabled.is_(True),
             )
             .order_by(self.default_order_by)
-            .options(joinedload(self.model.credentials))
+            .options(
+                joinedload(self.model.credentials),
+                selectinload(self.model.telemetry_metrics),
+            )
         )
         return query.all()
 
@@ -46,6 +56,7 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.id == provider_id,
                 self.model.user_id == user_id,
             )
+            .options(selectinload(self.model.telemetry_metrics))
             .first()
         )
 
@@ -60,6 +71,7 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.uuid == provider_uuid,
                 self.model.user_id == user_id,
             )
+            .options(selectinload(self.model.telemetry_metrics))
             .first()
         )
 
@@ -76,6 +88,7 @@ class ProviderRepository(BaseRepository[Provider]):
                 self.model.vendor == vendor,
                 self.model.external_id == external_id,
             )
+            .options(selectinload(self.model.telemetry_metrics))
             .first()
         )
 

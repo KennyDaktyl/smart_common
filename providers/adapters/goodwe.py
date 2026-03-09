@@ -7,7 +7,15 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 from smart_common.enums.unit import PowerUnit
-from smart_common.schemas.normalized_measurement import NormalizedMeasurement
+from smart_common.enums.provider_telemetry import (
+    ProviderTelemetryCapability,
+    TelemetryAggregationMode,
+    TelemetryChartType,
+)
+from smart_common.schemas.normalized_measurement import (
+    NormalizedMeasurement,
+    NormalizedMetric,
+)
 from smart_common.providers.adapters.base import BaseProviderAdapter
 from smart_common.providers.enums import (
     ProviderKind,
@@ -22,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 EXTRA_ENERGY_GRID_STATUS = -1
 IMPORT_ENERGY_GRID_STATUS = 1
+BATTERY_SOC_METRIC_KEY = "battery_soc"
+GRID_POWER_METRIC_KEY = "grid_power"
 
 
 class GoodWeProviderAdapter(BaseProviderAdapter):
@@ -366,14 +376,13 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         load_status = powerflow.get("loadStatus")
 
         if load_status == EXTRA_ENERGY_GRID_STATUS:
-            # eksport → wartość ujemna
+            # eksport do sieci -> wartość dodatnia
             return float(grid_w)
 
         if load_status == IMPORT_ENERGY_GRID_STATUS:
-            # pobór → wartość dodatnia
+            # pobór z sieci -> wartość ujemna
             return -float(grid_w)
 
-        # status nieznany
         return None
 
     @staticmethod
@@ -382,6 +391,42 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         if pv_w is None:
             return None
         return float(pv_w)
+
+    def _build_extra_metrics(
+        self,
+        powerflow: Mapping[str, Any],
+    ) -> list[NormalizedMetric]:
+        metrics: list[NormalizedMetric] = []
+
+        battery_soc = self._safe_watt(powerflow.get("soc"))
+        if battery_soc is not None:
+            metrics.append(
+                NormalizedMetric(
+                    key=BATTERY_SOC_METRIC_KEY,
+                    value=battery_soc,
+                    unit=PowerUnit.PERCENT.value,
+                    label="Battery SOC",
+                    chart_type=TelemetryChartType.LINE,
+                    aggregation_mode=TelemetryAggregationMode.RAW,
+                    capability_tag=ProviderTelemetryCapability.ENERGY_STORAGE,
+                )
+            )
+
+        grid_power = self._extract_signed_grid_power(powerflow)
+        if grid_power is not None:
+            metrics.append(
+                NormalizedMetric(
+                    key=GRID_POWER_METRIC_KEY,
+                    value=grid_power,
+                    unit=PowerUnit.WATT.value,
+                    label="Grid power",
+                    chart_type=TelemetryChartType.BAR,
+                    aggregation_mode=TelemetryAggregationMode.HOURLY_INTEGRAL,
+                    capability_tag=ProviderTelemetryCapability.POWER_METER,
+                )
+            )
+
+        return metrics
 
     def get_current_export_power(self, power_station_id: str) -> Optional[float]:
         powerflow = self._get_powerflow_payload(power_station_id)
@@ -473,6 +518,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             unit=PowerUnit.WATT.value,
             measured_at=datetime.now(timezone.utc),
             metadata=metadata,
+            extra_metrics=self._build_extra_metrics(powerflow_map),
         )
 
     # ------------------------------------------------------------------

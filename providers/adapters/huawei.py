@@ -520,4 +520,5 @@ class HuaweiProviderAdapter(BaseProviderAdapter):
             unit=PowerUnit.KILOWATT.value,
             measured_at=datetime.now(timezone.utc),
             metadata=metadata,
+            extra_metrics=[],
         )

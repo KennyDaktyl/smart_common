@@ -402,6 +402,7 @@ class DeviceService:
                     device_uuid=str(updated.uuid),
                     device_number=updated.device_number,
                     mode=updated.mode.value,
+                    rated_power=updated.rated_power,
                     threshold_kw=updated.threshold_value,
                     scheduler_id=updated.scheduler_id,
                 ),

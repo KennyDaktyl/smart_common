@@ -29,6 +29,7 @@ class DeviceUpdatedPayload(APIModel):
     device_uuid: str
     device_id: int
     mode: str
+    rated_power: Optional[float] = None
     threshold_kw: Optional[float] = None
     scheduler_id: Optional[int] = None
 

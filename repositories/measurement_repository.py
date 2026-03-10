@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import object_session
+from sqlalchemy.orm.exc import UnmappedInstanceError
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_metric_definition import ProviderMetricDefinition
@@ -136,11 +137,18 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         if provider.id is None:
             raise ValueError("provider must be persisted before saving measurements")
 
-        if object_session(provider) is self.session:
+        try:
+            current_session = object_session(provider)
+        except UnmappedInstanceError:
+            current_session = None
+
+        if current_session is self.session:
             return provider
 
         persisted_provider = self.session.get(Provider, provider.id)
         if persisted_provider is None:
+            if current_session is None:
+                return provider
             raise ValueError(f"provider id={provider.id} not found in current session")
 
         return persisted_provider

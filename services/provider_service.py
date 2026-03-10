@@ -460,6 +460,8 @@ class ProviderService:
             "power_source",
             "value_min",
             "value_max",
+            "has_power_meter",
+            "has_energy_storage",
             "enabled",
             "config",
         }

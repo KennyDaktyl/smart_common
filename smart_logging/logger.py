@@ -28,14 +28,6 @@ def setup_logging():
 
     formatter = ExtraFormatter(FORMAT, datefmt=DATEFMT)
 
-    file_handler = AdvancedRotatingFileHandler(
-        base_log_dir=LOG_DIR,
-        filename="service.log",
-        retention_days=365,
-    )
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
@@ -46,8 +38,24 @@ def setup_logging():
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.handlers.clear()
-    root.addHandler(file_handler)
     root.addHandler(console_handler)
+
+    try:
+        file_handler = AdvancedRotatingFileHandler(
+            base_log_dir=LOG_DIR,
+            filename="service.log",
+            retention_days=365,
+        )
+    except OSError as exc:
+        root.warning(
+            "File logging disabled: %s",
+            exc,
+            extra={"log_dir": LOG_DIR},
+        )
+    else:
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
 
     # =========================
     # UVICORN → PROPAGATE DO ROOT

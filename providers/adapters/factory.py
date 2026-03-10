@@ -161,7 +161,9 @@ def create_adapter_for_provider(
     factory = factory or get_vendor_adapter_factory()
 
     cache_key = (
-        f"{provider.id}:{vendor.value}:{external_id}:{power_source.value}"
+        f"{provider.id}:{vendor.value}:{external_id}:{power_source.value}:"
+        f"{int(bool(getattr(provider, 'has_power_meter', False)))}:"
+        f"{int(bool(getattr(provider, 'has_energy_storage', False)))}"
     )
     adapter = factory.create(
         vendor,
@@ -171,6 +173,12 @@ def create_adapter_for_provider(
             "provider_id": provider.id,
             "provider_external_id": external_id,
             "provider_power_source": power_source,
+            "provider_has_power_meter": bool(
+                getattr(provider, "has_power_meter", False)
+            ),
+            "provider_has_energy_storage": bool(
+                getattr(provider, "has_energy_storage", False)
+            ),
         },
     )
 

@@ -53,6 +53,8 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         provider_id: int,
         provider_external_id: str,
         provider_power_source: ProviderPowerSource,
+        provider_has_power_meter: bool = False,
+        provider_has_energy_storage: bool = False,
     ) -> None:
         super().__init__(
             base_url="https://www.semsportal.com",
@@ -65,6 +67,8 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         self.provider_id = provider_id
         self.provider_external_id = provider_external_id
         self.provider_power_source = provider_power_source
+        self.provider_has_power_meter = provider_has_power_meter
+        self.provider_has_energy_storage = provider_has_energy_storage
 
         self._login_base_url = "https://www.semsportal.com"
         self._api_base_url: str | None = None
@@ -399,7 +403,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         metrics: list[NormalizedMetric] = []
 
         battery_soc = self._safe_watt(powerflow.get("soc"))
-        if battery_soc is not None:
+        if self.provider_has_energy_storage and battery_soc is not None:
             metrics.append(
                 NormalizedMetric(
                     key=BATTERY_SOC_METRIC_KEY,
@@ -413,7 +417,7 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             )
 
         grid_power = self._extract_signed_grid_power(powerflow)
-        if grid_power is not None:
+        if self.provider_has_power_meter and grid_power is not None:
             metrics.append(
                 NormalizedMetric(
                     key=GRID_POWER_METRIC_KEY,

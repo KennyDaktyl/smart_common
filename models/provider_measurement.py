@@ -49,3 +49,8 @@ class ProviderMeasurement(Base):
         "Provider",
         back_populates="measurements",
     )
+    metric_samples = relationship(
+        "ProviderMetricSample",
+        back_populates="provider_measurement",
+        cascade="all, delete-orphan",
+    )

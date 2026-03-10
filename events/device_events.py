@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Union
 
 from smart_common.enums.event import EventType
+from smart_common.schemas.automation_rule import AutomationRuleGroup
 from smart_common.schemas.base import APIModel
 
 
@@ -16,6 +17,7 @@ class DeviceCreatedPayload(APIModel):
     rated_power: Optional[float] = None
     threshold_value: Optional[float] = None
     threshold_kw: Optional[float] = None
+    auto_rule: Optional[AutomationRuleGroup] = None
     scheduler_id: Optional[int] = None
     microcontroller_uuid: Optional[str] = None
 
@@ -31,6 +33,7 @@ class DeviceUpdatedPayload(APIModel):
     mode: str
     rated_power: Optional[float] = None
     threshold_kw: Optional[float] = None
+    auto_rule: Optional[AutomationRuleGroup] = None
     scheduler_id: Optional[int] = None
 
 

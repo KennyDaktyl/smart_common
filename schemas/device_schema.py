@@ -5,6 +5,10 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 from smart_common.enums.device import DeviceMode
+from smart_common.schemas.automation_rule import (
+    AutomationRuleGroup,
+    extract_legacy_power_threshold,
+)
 from smart_common.schemas.base import APIModel, ORMModel
 
 
@@ -52,6 +56,7 @@ class DeviceBase(APIModel):
         description="Threshold value for AUTO mode decision making",
         example=22.5,
     )
+    auto_rule: AutomationRuleGroup | None = None
     scheduler_id: Optional[int] = Field(
         None,
         ge=1,
@@ -61,7 +66,12 @@ class DeviceBase(APIModel):
 
     @model_validator(mode="after")
     def validate_mode_constraints(self):
-        if self.mode == DeviceMode.AUTO_POWER and self.threshold_value is None:
+        if self.auto_rule is not None:
+            legacy_threshold = extract_legacy_power_threshold(self.auto_rule)
+            self.threshold_value = (
+                legacy_threshold[0] if legacy_threshold is not None else None
+            )
+        if self.mode == DeviceMode.AUTO_POWER and self.auto_rule is None and self.threshold_value is None:
             raise ValueError("threshold_value is required when device mode is AUTO")
         if self.mode == DeviceMode.SCHEDULE and self.scheduler_id is None:
             raise ValueError("scheduler_id is required when device mode is SCHEDULE")
@@ -80,11 +90,17 @@ class DeviceUpdateRequest(APIModel):
     rated_power: Optional[float] = Field(None, gt=0)
     manual_state: Optional[bool] = None
     threshold_value: Optional[float] = None
+    auto_rule: AutomationRuleGroup | None = None
     scheduler_id: Optional[int] = Field(None, ge=1)
 
     @model_validator(mode="after")
     def validate_threshold_for_auto(self):
-        if self.mode == DeviceMode.AUTO_POWER and self.threshold_value is None:
+        if self.auto_rule is not None:
+            legacy_threshold = extract_legacy_power_threshold(self.auto_rule)
+            self.threshold_value = (
+                legacy_threshold[0] if legacy_threshold is not None else None
+            )
+        if self.mode == DeviceMode.AUTO_POWER and self.auto_rule is None and self.threshold_value is None:
             raise ValueError(
                 "threshold_value must be provided when changing mode to AUTO"
             )
@@ -105,6 +121,7 @@ class DeviceResponse(ORMModel):
     scheduler_id: Optional[int]
     rated_power: Optional[float]
     threshold_value: Optional[float]
+    auto_rule: AutomationRuleGroup | None = Field(default=None, alias="auto_rule_json")
     manual_state: Optional[bool]
     last_state_change_at: Optional[datetime]
     created_at: datetime

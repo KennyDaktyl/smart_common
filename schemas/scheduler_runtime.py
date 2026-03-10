@@ -5,6 +5,7 @@ from enum import Enum
 from uuid import UUID
 
 from smart_common.enums.scheduler import SchedulerCommandAction
+from smart_common.schemas.automation_rule import AutomationRuleGroup
 
 
 class DecisionKind(str, Enum):
@@ -26,6 +27,7 @@ class DueSchedulerEntry:
     use_power_threshold: bool
     power_threshold_value: float | None
     power_threshold_unit: str | None
+    activation_rule: AutomationRuleGroup | None
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from smart_common.enums.microcontroller import MicrocontrollerType
 from smart_common.enums.sensor import SensorType
 from smart_common.enums.user import UserRole
 from smart_common.models.provider import Provider
+from smart_common.schemas.automation_rule import AutomationRuleGroup
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.device_schema import DeviceResponse
 from smart_common.schemas.provider_schema import (
@@ -116,6 +117,7 @@ class DeviceConfig(APIModel):
     mode: DeviceMode
     rated_power: Optional[float] = None
     threshold_value: Optional[float] = None
+    auto_rule: Optional[AutomationRuleGroup] = None
     desired_state: Optional[bool] = None
     is_on: Optional[bool] = None
 

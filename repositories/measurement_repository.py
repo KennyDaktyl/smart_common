@@ -6,6 +6,7 @@ import logging
 from typing import Any, Iterable
 
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_metric_definition import ProviderMetricDefinition
@@ -68,17 +69,6 @@ def _split_metadata(metadata: Mapping[str, Any] | None) -> tuple[dict[str, Any],
     return system_metadata, extra_data
 
 
-def _deep_merge_dict(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(base)
-    for key, value in updates.items():
-        current = merged.get(key)
-        if isinstance(current, Mapping) and isinstance(value, Mapping):
-            merged[key] = _deep_merge_dict(dict(current), dict(value))
-        else:
-            merged[key] = value
-    return merged
-
-
 def _count_nested_entries(value: Any) -> int:
     if isinstance(value, Mapping):
         return len(value) + sum(_count_nested_entries(item) for item in value.values())
@@ -106,23 +96,8 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
             raise ValueError("provider must be persisted before saving measurements")
 
         incoming_metadata = _normalize_metadata(measurement.metadata)
-        last_entry = self._fetch_last_measurement(provider.id)
-        if (
-            not force_insert
-            and last_entry
-            and self._is_equivalent(last_entry, measurement)
-        ):
-            self._update_last_measurement(
-                last_entry,
-                measurement,
-                metadata_parts=self.split_metadata(incoming_metadata),
-                provider_id=provider.id,
-                poll_id=poll_id,
-                incoming_metadata=incoming_metadata,
-            )
-            return None
-
         system_metadata, extra_data = self.split_metadata(incoming_metadata)
+        persisted_provider = self._resolve_provider(provider)
         entry = ProviderMeasurement(
             provider_id=provider.id,
             measured_at=measurement.measured_at,
@@ -135,7 +110,7 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         self.session.add(entry)
         self.session.flush()
         self._sync_metric_samples(
-            provider=provider,
+            provider=persisted_provider,
             entry=entry,
             measurement=measurement,
         )
@@ -157,55 +132,18 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
 
         return entry
 
-    def _update_last_measurement(
-        self,
-        entry: ProviderMeasurement,
-        measurement: NormalizedMeasurement,
-        *,
-        metadata_parts: tuple[dict[str, Any], dict[str, Any]],
-        provider_id: int,
-        poll_id: str | None,
-        incoming_metadata: dict[str, Any],
-    ) -> None:
-        system_metadata, extra_data = metadata_parts
-        entry.measured_at = measurement.measured_at
-        entry.measured_unit = measurement.unit
-        entry.measured_value = measurement.value
-        entry.metadata_payload = system_metadata
-        existing_extra_data = _normalize_metadata(entry.extra_data)
-        entry.extra_data = _deep_merge_dict(existing_extra_data, extra_data)
-        self.session.add(entry)
-        self.session.flush()
-        self._replace_metric_samples(
-            provider=provider_id,
-            entry=entry,
-            measurement=measurement,
-        )
+    def _resolve_provider(self, provider: Provider) -> Provider:
+        if provider.id is None:
+            raise ValueError("provider must be persisted before saving measurements")
 
-        logger.info(
-            "Measurement persistence check",
-            extra={
-                "provider_id": provider_id,
-                "poll_id": poll_id,
-                "action": "refreshed",
-                "incoming_metadata_keys": sorted(incoming_metadata.keys()),
-                "incoming_metadata_size": _count_nested_entries(incoming_metadata),
-                "system_metadata_keys": sorted(system_metadata.keys()),
-                "extra_data_keys": sorted(extra_data.keys()),
-                "extra_data_size": _count_nested_entries(extra_data),
-            },
-        )
+        if object_session(provider) is self.session:
+            return provider
 
-    def _fetch_last_measurement(
-        self,
-        provider_id: int,
-    ) -> ProviderMeasurement | None:
-        return (
-            self.session.query(ProviderMeasurement)
-            .filter_by(provider_id=provider_id)
-            .order_by(ProviderMeasurement.measured_at.desc())
-            .first()
-        )
+        persisted_provider = self.session.get(Provider, provider.id)
+        if persisted_provider is None:
+            raise ValueError(f"provider id={provider.id} not found in current session")
+
+        return persisted_provider
 
     def get_last_measurements(
         self,
@@ -230,22 +168,6 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 last_by_provider[measurement.provider_id] = measurement
 
         return last_by_provider
-
-    def _is_equivalent(
-        self,
-        last_entry: ProviderMeasurement | None,
-        measurement: NormalizedMeasurement,
-    ) -> bool:
-        if last_entry is None:
-            return False
-
-        if last_entry.measured_unit != measurement.unit:
-            return False
-
-        if last_entry.measured_value is None or measurement.value is None:
-            return last_entry.measured_value is None and measurement.value is None
-
-        return float(last_entry.measured_value) == measurement.value
 
     def list_metric_definitions(
         self,
@@ -352,26 +274,6 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
             )
             .order_by(ProviderMeasurement.measured_at.desc())
             .first()
-        )
-
-    def _replace_metric_samples(
-        self,
-        *,
-        provider: int,
-        entry: ProviderMeasurement,
-        measurement: NormalizedMeasurement,
-    ) -> None:
-        self.session.query(ProviderMetricSample).filter(
-            ProviderMetricSample.provider_measurement_id == entry.id,
-        ).delete(synchronize_session=False)
-        self.session.flush()
-        persisted_provider = self.session.get(Provider, provider)
-        if persisted_provider is None:
-            return
-        self._sync_metric_samples(
-            provider=persisted_provider,
-            entry=entry,
-            measurement=measurement,
         )
 
     def _sync_metric_samples(

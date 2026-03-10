@@ -13,6 +13,8 @@ from smart_common.providers.enums import (
 )
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.provider_measurement_schemas import (
+    DayEnergyOut,
+    ProviderMetricSeriesOut,
     ProviderMeasurementResponse,
     ProviderTelemetryMetricDefinition,
 )
@@ -65,6 +67,8 @@ class ProviderCreateRequest(APIModel):
 
     value_min: float | None = None
     value_max: float | None = None
+    has_power_meter: bool = False
+    has_energy_storage: bool = False
 
     enabled: bool = True
 
@@ -82,6 +86,8 @@ class ProviderUpdateRequest(APIModel):
 
     value_min: Optional[float] = None
     value_max: Optional[float] = None
+    has_power_meter: Optional[bool] = None
+    has_energy_storage: Optional[bool] = None
 
     enabled: Optional[bool] = None
     config: Optional[Dict[str, Any]] = None
@@ -121,6 +127,15 @@ class ProviderResponse(ORMModel):
         from_attributes=True,
         extra="forbid",
     )
+
+
+class ProviderTelemetryResponse(APIModel):
+    provider: ProviderResponse
+    date: str
+    measured_unit: str | None = None
+    energy_unit: str | None = None
+    day: DayEnergyOut
+    metrics: list[ProviderMetricSeriesOut] = Field(default_factory=list)
 
 
 class ProviderEnabledUpdateRequest(APIModel):

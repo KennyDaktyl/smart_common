@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 
 @dataclass(frozen=True)
@@ -12,3 +12,4 @@ class NormalizedMeasurement:
     unit: str
     measured_at: datetime
     metadata: Dict[str, Any] = field(default_factory=dict)
+    extra_metrics: Sequence[Any] = field(default_factory=tuple)

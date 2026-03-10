@@ -11,9 +11,11 @@ from smart_common.enums.scheduler import SchedulerDayOfWeek
 from smart_common.models.device import Device
 from smart_common.models.microcontroller import Microcontroller
 from smart_common.models.provider import Provider
+from smart_common.models.provider_metric_sample import ProviderMetricSample
 from smart_common.models.provider_measurement import ProviderMeasurement
 from smart_common.models.scheduler import Scheduler
 from smart_common.models.scheduler_slot import SchedulerSlot
+from smart_common.schemas.automation_rule import AutomationRuleGroup
 from smart_common.schemas.scheduler_runtime import DueSchedulerEntry
 
 
@@ -45,6 +47,7 @@ class SchedulerRuntimeRepository:
                 SchedulerSlot.use_power_threshold,
                 SchedulerSlot.power_threshold_value,
                 SchedulerSlot.power_threshold_unit,
+                SchedulerSlot.activation_rule_json,
             )
             .join(Microcontroller, Device.microcontroller_id == Microcontroller.id)
             .join(Scheduler, Device.scheduler_id == Scheduler.id)
@@ -89,6 +92,7 @@ class SchedulerRuntimeRepository:
                 SchedulerSlot.use_power_threshold,
                 SchedulerSlot.power_threshold_value,
                 SchedulerSlot.power_threshold_unit,
+                SchedulerSlot.activation_rule_json,
             )
             .join(Microcontroller, Device.microcontroller_id == Microcontroller.id)
             .join(Scheduler, Device.scheduler_id == Scheduler.id)
@@ -117,6 +121,21 @@ class SchedulerRuntimeRepository:
             self.db.query(ProviderMeasurement)
             .filter(ProviderMeasurement.provider_id == provider_id)
             .order_by(ProviderMeasurement.measured_at.desc())
+            .first()
+        )
+
+    def get_latest_metric_sample(
+        self,
+        provider_id: int,
+        metric_key: str,
+    ) -> ProviderMetricSample | None:
+        return (
+            self.db.query(ProviderMetricSample)
+            .filter(
+                ProviderMetricSample.provider_id == provider_id,
+                ProviderMetricSample.metric_key == metric_key,
+            )
+            .order_by(ProviderMetricSample.measured_at.desc())
             .first()
         )
 
@@ -174,6 +193,16 @@ def _map_due_entries(rows: list[tuple]) -> list[DueSchedulerEntry]:
                 use_power_threshold=bool(row[8]),
                 power_threshold_value=_to_float(row[9]),
                 power_threshold_unit=_normalize_unit(row[10]),
+                activation_rule=_parse_activation_rule(row[11]),
             )
         )
     return result
+
+
+def _parse_activation_rule(value: object) -> AutomationRuleGroup | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        return AutomationRuleGroup.model_validate(value)
+    except Exception:
+        return None

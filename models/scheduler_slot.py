@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String
+from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smart_common.core.db import Base
@@ -65,6 +65,11 @@ class SchedulerSlot(Base):
         String(16),
         nullable=True,
         comment="Power threshold unit (W, kW, MW)",
+    )
+    activation_rule_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Structured activation rule for scheduler slot",
     )
 
     scheduler = relationship("Scheduler", back_populates="slots")

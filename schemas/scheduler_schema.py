@@ -7,6 +7,11 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from smart_common.enums.scheduler import SchedulerDayOfWeek
+from smart_common.schemas.automation_rule import (
+    AutomationRuleGroup,
+    build_legacy_power_rule,
+    extract_legacy_power_threshold,
+)
 from smart_common.schemas.base import APIModel, ORMModel
 
 HHMM_PATTERN = r"^(?:[01]\d|2[0-3]):[0-5]\d$"
@@ -35,6 +40,7 @@ class SchedulerSlotIn(APIModel):
     use_power_threshold: bool = False
     power_threshold_value: float | None = Field(default=None, gt=0)
     power_threshold_unit: str | None = None
+    activation_rule: AutomationRuleGroup | None = None
 
     @model_validator(mode="after")
     def normalize_and_validate(self):
@@ -81,9 +87,24 @@ class SchedulerSlotIn(APIModel):
                 raise ValueError(
                     f"power_threshold_unit must be one of: {', '.join(sorted(POWER_THRESHOLD_UNITS))}"
                 )
-        else:
+            if self.activation_rule is None:
+                self.activation_rule = build_legacy_power_rule(
+                    value=self.power_threshold_value,
+                    unit=self.power_threshold_unit,
+                )
+        elif self.activation_rule is None:
             self.power_threshold_value = None
             self.power_threshold_unit = None
+
+        legacy_threshold = extract_legacy_power_threshold(self.activation_rule)
+        if legacy_threshold is None:
+            self.use_power_threshold = False
+            self.power_threshold_value = None
+            self.power_threshold_unit = None
+        else:
+            self.use_power_threshold = True
+            self.power_threshold_value = legacy_threshold[0]
+            self.power_threshold_unit = legacy_threshold[1]
 
         return self
 
@@ -110,6 +131,10 @@ class SchedulerSlotResponse(ORMModel):
     use_power_threshold: bool
     power_threshold_value: float | None
     power_threshold_unit: str | None
+    activation_rule: AutomationRuleGroup | None = Field(
+        default=None,
+        alias="activation_rule_json",
+    )
 
 
 class SchedulerResponse(ORMModel):

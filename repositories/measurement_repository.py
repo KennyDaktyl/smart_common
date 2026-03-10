@@ -6,6 +6,8 @@ import logging
 from typing import Any, Iterable
 
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
+from sqlalchemy.orm.exc import UnmappedInstanceError
 
 from smart_common.models.provider import Provider
 from smart_common.models.provider_metric_definition import ProviderMetricDefinition
@@ -96,6 +98,7 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
 
         incoming_metadata = _normalize_metadata(measurement.metadata)
         system_metadata, extra_data = self.split_metadata(incoming_metadata)
+        persisted_provider = self._resolve_provider(provider)
         entry = ProviderMeasurement(
             provider_id=provider.id,
             measured_at=measurement.measured_at,
@@ -108,7 +111,7 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         self.session.add(entry)
         self.session.flush()
         self._sync_metric_samples(
-            provider=provider,
+            provider=persisted_provider,
             entry=entry,
             measurement=measurement,
         )
@@ -129,6 +132,26 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         )
 
         return entry
+
+    def _resolve_provider(self, provider: Provider) -> Provider:
+        if provider.id is None:
+            raise ValueError("provider must be persisted before saving measurements")
+
+        try:
+            current_session = object_session(provider)
+        except UnmappedInstanceError:
+            current_session = None
+
+        if current_session is self.session:
+            return provider
+
+        persisted_provider = self.session.get(Provider, provider.id)
+        if persisted_provider is None:
+            if current_session is None:
+                return provider
+            raise ValueError(f"provider id={provider.id} not found in current session")
+
+        return persisted_provider
 
     def get_last_measurements(
         self,

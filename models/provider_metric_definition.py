@@ -13,8 +13,6 @@ from smart_common.enums.provider_telemetry import (
 
 def _enum_values(enum_cls):
     return [item.value for item in enum_cls]
-
-
 class ProviderMetricDefinition(Base):
     __tablename__ = "provider_metric_definitions"
     __table_args__ = (

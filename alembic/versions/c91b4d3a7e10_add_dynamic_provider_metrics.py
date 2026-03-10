@@ -18,7 +18,6 @@ down_revision: Union[str, Sequence[str], None] = "8fbd96e3c3cb"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-
 telemetry_chart_type_enum = sa.Enum(
     "line",
     "bar",
@@ -41,7 +40,6 @@ def upgrade() -> None:
     telemetry_chart_type_enum.create(op.get_bind(), checkfirst=True)
     telemetry_aggregation_mode_enum.create(op.get_bind(), checkfirst=True)
     provider_telemetry_capability_enum.create(op.get_bind(), checkfirst=True)
-
     op.add_column(
         "providers",
         sa.Column(

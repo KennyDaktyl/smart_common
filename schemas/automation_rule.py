@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Iterable, Mapping
 
 from pydantic import Field, model_validator
 
@@ -55,7 +56,47 @@ class AutomationRuleCondition(APIModel):
 
 class AutomationRuleGroup(APIModel):
     operator: AutomationRuleGroupOperator = AutomationRuleGroupOperator.ANY
-    conditions: list[AutomationRuleCondition] = Field(min_length=1)
+    items: list[AutomationRuleCondition | AutomationRuleGroup] | None = Field(
+        default=None
+    )
+    conditions: list[AutomationRuleCondition] | None = Field(
+        default=None,
+        exclude=True,
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_conditions(cls, value: object):
+        if not isinstance(value, Mapping):
+            return value
+
+        data = dict(value)
+        if data.get("items") is None and data.get("conditions") is not None:
+            data["items"] = data.get("conditions")
+        return data
+
+    @model_validator(mode="after")
+    def validate_items(self):
+        if self.items is None and self.conditions is None:
+            raise ValueError("automation rule group requires items or conditions")
+
+        if self.items is not None and self.conditions is not None:
+            if len(self.items) != len(self.conditions):
+                raise ValueError(
+                    "automation rule group cannot define both items and conditions"
+                )
+
+        if self.items is None:
+            self.items = list(self.conditions or [])
+
+        if not self.items:
+            raise ValueError("automation rule group must contain at least one item")
+
+        self.conditions = None
+        return self
+
+
+AutomationRuleGroup.model_rebuild()
 
 
 def build_legacy_power_rule(
@@ -66,7 +107,7 @@ def build_legacy_power_rule(
 ) -> AutomationRuleGroup:
     return AutomationRuleGroup(
         operator=AutomationRuleGroupOperator.ANY,
-        conditions=[
+        items=[
             AutomationRuleCondition(
                 source=AutomationRuleSource.PROVIDER_PRIMARY_POWER,
                 comparator=comparator,
@@ -84,10 +125,14 @@ def extract_legacy_power_threshold(
         return None
     if rule.operator != AutomationRuleGroupOperator.ANY:
         return None
-    if len(rule.conditions) != 1:
+
+    items = rule.items or []
+    if len(items) != 1:
         return None
 
-    condition = rule.conditions[0]
+    condition = items[0]
+    if not isinstance(condition, AutomationRuleCondition):
+        return None
     if condition.source != AutomationRuleSource.PROVIDER_PRIMARY_POWER:
         return None
     if condition.comparator != AutomationRuleComparator.GTE:
@@ -96,16 +141,34 @@ def extract_legacy_power_threshold(
     return condition.value, condition.unit
 
 
+def iter_conditions(
+    rule: AutomationRuleGroup | None,
+) -> Iterable[AutomationRuleCondition]:
+    if rule is None:
+        return []
+    return list(_iter_nodes(rule))
+
+
 def uses_source(
     rule: AutomationRuleGroup | None,
     source: AutomationRuleSource,
 ) -> bool:
     if rule is None:
         return False
-    return any(condition.source == source for condition in rule.conditions)
+    return any(condition.source == source for condition in _iter_nodes(rule))
 
 
 def source_metric_key(source: AutomationRuleSource) -> str | None:
     if source == AutomationRuleSource.PROVIDER_BATTERY_SOC:
         return BATTERY_SOC_METRIC_KEY
     return None
+
+
+def _iter_nodes(
+    rule: AutomationRuleGroup,
+) -> Iterable[AutomationRuleCondition]:
+    for item in rule.items or []:
+        if isinstance(item, AutomationRuleCondition):
+            yield item
+            continue
+        yield from _iter_nodes(item)

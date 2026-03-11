@@ -44,68 +44,81 @@ class SchedulerDecisionService:
                 trigger_reason="SCHEDULER_MATCH",
             )
 
+        evaluation = self._evaluate_rule_group(
+            rule=rule,
+            now_utc=now_utc,
+            provider=provider,
+            latest_measurement=latest_measurement,
+            latest_metric_samples=latest_metric_samples or {},
+        )
+
+        if evaluation.met is True:
+            return Decision(
+                kind=DecisionKind.ALLOW_ON,
+                trigger_reason="SCHEDULER_MATCH",
+                measured_value=evaluation.measured_value,
+                measured_unit=evaluation.measured_unit,
+            )
+        if evaluation.met is False:
+            return Decision(
+                kind=DecisionKind.SKIP_THRESHOLD_NOT_MET,
+                trigger_reason=evaluation.reason,
+                measured_value=evaluation.measured_value,
+                measured_unit=evaluation.measured_unit,
+            )
+
+        return Decision(
+            kind=DecisionKind.SKIP_NO_POWER_DATA,
+            trigger_reason=evaluation.reason,
+            measured_value=evaluation.measured_value,
+            measured_unit=evaluation.measured_unit,
+        )
+
+    def _evaluate_rule_group(
+        self,
+        *,
+        rule: AutomationRuleGroup,
+        now_utc: datetime,
+        provider: Provider | None,
+        latest_measurement: ProviderMeasurement | None,
+        latest_metric_samples: Mapping[str, ProviderMetricSample | None],
+    ) -> _ConditionEvaluation:
         evaluations = [
-            self._evaluate_condition(
-                condition=condition,
+            self._evaluate_rule_item(
+                item=item,
                 now_utc=now_utc,
                 provider=provider,
                 latest_measurement=latest_measurement,
-                latest_metric_samples=latest_metric_samples or {},
+                latest_metric_samples=latest_metric_samples,
             )
-            for condition in rule.conditions
+            for item in (rule.items or [])
         ]
+        return _combine_group_evaluations(rule.operator, evaluations)
 
-        if rule.operator == AutomationRuleGroupOperator.ALL:
-            failed = next((item for item in evaluations if item.met is False), None)
-            if failed is not None:
-                return Decision(
-                    kind=DecisionKind.SKIP_THRESHOLD_NOT_MET,
-                    trigger_reason=failed.reason,
-                    measured_value=failed.measured_value,
-                    measured_unit=failed.measured_unit,
-                )
-
-            missing = next((item for item in evaluations if item.met is None), None)
-            if missing is not None:
-                return Decision(
-                    kind=DecisionKind.SKIP_NO_POWER_DATA,
-                    trigger_reason=missing.reason,
-                    measured_value=missing.measured_value,
-                    measured_unit=missing.measured_unit,
-                )
-
-            matched = evaluations[0]
-            return Decision(
-                kind=DecisionKind.ALLOW_ON,
-                trigger_reason="SCHEDULER_MATCH",
-                measured_value=matched.measured_value,
-                measured_unit=matched.measured_unit,
+    def _evaluate_rule_item(
+        self,
+        *,
+        item: AutomationRuleCondition | AutomationRuleGroup,
+        now_utc: datetime,
+        provider: Provider | None,
+        latest_measurement: ProviderMeasurement | None,
+        latest_metric_samples: Mapping[str, ProviderMetricSample | None],
+    ) -> _ConditionEvaluation:
+        if isinstance(item, AutomationRuleCondition):
+            return self._evaluate_condition(
+                condition=item,
+                now_utc=now_utc,
+                provider=provider,
+                latest_measurement=latest_measurement,
+                latest_metric_samples=latest_metric_samples,
             )
 
-        matched = next((item for item in evaluations if item.met is True), None)
-        if matched is not None:
-            return Decision(
-                kind=DecisionKind.ALLOW_ON,
-                trigger_reason="SCHEDULER_MATCH",
-                measured_value=matched.measured_value,
-                measured_unit=matched.measured_unit,
-            )
-
-        failed = next((item for item in evaluations if item.met is False), None)
-        if failed is not None:
-            return Decision(
-                kind=DecisionKind.SKIP_THRESHOLD_NOT_MET,
-                trigger_reason=failed.reason,
-                measured_value=failed.measured_value,
-                measured_unit=failed.measured_unit,
-            )
-
-        missing = evaluations[0]
-        return Decision(
-            kind=DecisionKind.SKIP_NO_POWER_DATA,
-            trigger_reason=missing.reason,
-            measured_value=missing.measured_value,
-            measured_unit=missing.measured_unit,
+        return self._evaluate_rule_group(
+            rule=item,
+            now_utc=now_utc,
+            provider=provider,
+            latest_measurement=latest_measurement,
+            latest_metric_samples=latest_metric_samples,
         )
 
     def _evaluate_condition(
@@ -242,6 +255,32 @@ def _legacy_rule_from_entry(entry: DueSchedulerEntry) -> AutomationRuleGroup | N
         value=entry.power_threshold_value,
         unit=entry.power_threshold_unit or "W",
     )
+
+
+def _combine_group_evaluations(
+    operator: AutomationRuleGroupOperator,
+    evaluations: list[_ConditionEvaluation],
+) -> _ConditionEvaluation:
+    if operator == AutomationRuleGroupOperator.ALL:
+        failed = next((item for item in evaluations if item.met is False), None)
+        if failed is not None:
+            return failed
+
+        missing = next((item for item in evaluations if item.met is None), None)
+        if missing is not None:
+            return missing
+
+        return evaluations[0]
+
+    matched = next((item for item in evaluations if item.met is True), None)
+    if matched is not None:
+        return matched
+
+    failed = next((item for item in evaluations if item.met is False), None)
+    if failed is not None:
+        return failed
+
+    return evaluations[0]
 
 
 def _convert_power_value(

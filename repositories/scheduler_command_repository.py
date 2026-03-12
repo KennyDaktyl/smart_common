@@ -23,6 +23,7 @@ class SchedulerCommandRepository:
         minute_key: datetime,
         entry: DueSchedulerEntry,
         action: SchedulerCommandAction,
+        command_payload: dict | None = None,
         trigger_reason: str | None = None,
         measured_value: float | None = None,
         measured_unit: str | None = None,
@@ -48,6 +49,7 @@ class SchedulerCommandRepository:
                 trigger_reason=trigger_reason,
                 measured_value=measured_value,
                 measured_unit=measured_unit,
+                command_payload_json=command_payload,
                 created_at=now,
                 updated_at=now,
             )
@@ -241,6 +243,7 @@ def _to_dispatch_entry(command: SchedulerCommand) -> DispatchCommandEntry:
         scheduler_id=command.scheduler_id,
         user_id=command.user_id,
         action=command.action,
+        command_payload=command.command_payload_json,
     )
 
 
@@ -253,6 +256,11 @@ _FINAL_STATUSES = {
 
 
 def _state_matches(action: SchedulerCommandAction, actual_state: bool | None) -> bool:
+    if action in {
+        SchedulerCommandAction.ENABLE_POLICY,
+        SchedulerCommandAction.DISABLE_POLICY,
+    }:
+        return True
     if actual_state is None:
         return False
     if action == SchedulerCommandAction.ON:

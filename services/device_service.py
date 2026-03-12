@@ -186,6 +186,12 @@ class DeviceService:
             microcontroller=microcontroller,
         )
 
+        if effective_mode == DeviceMode.AUTO_POWER and microcontroller.power_provider is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Auto mode requires a power provider attached to the microcontroller",
+            )
+
         if effective_mode == DeviceMode.AUTO_POWER and effective_auto_rule is None:
             self.logger.warning(
                 "AUTO mode without rule | device_id=%s",

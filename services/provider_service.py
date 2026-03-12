@@ -13,6 +13,12 @@ from smart_common.providers.enums import (
     ProviderVendor,
 )
 from smart_common.enums.unit import PowerUnit
+from smart_common.schemas.automation_rule import (
+    AutomationRuleGroup,
+    AutomationRuleSource,
+    build_legacy_power_rule,
+    uses_source,
+)
 
 # ---- provider config schemas ----
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
@@ -492,6 +498,12 @@ class ProviderService:
                 changes["power_source"]
             )
 
+        self._ensure_capability_change_is_safe(
+            db,
+            provider=provider,
+            changes=changes,
+        )
+
         if changes.get("enabled") is True and not self._is_provider_attached(
             db, provider
         ):
@@ -576,6 +588,73 @@ class ProviderService:
             .first()
             is not None
         )
+
+    @staticmethod
+    def _rule_uses_battery_source(rule_data) -> bool:
+        if rule_data is None:
+            return False
+        if isinstance(rule_data, dict):
+            try:
+                rule_data = AutomationRuleGroup.model_validate(rule_data)
+            except Exception:
+                return False
+        return uses_source(
+            rule_data,
+            AutomationRuleSource.PROVIDER_BATTERY_SOC,
+        )
+
+    @classmethod
+    def _device_uses_battery_rule(cls, device, provider_unit: str | None) -> bool:
+        rule_data = getattr(device, "auto_rule_json", None)
+        if rule_data is None and getattr(device, "threshold_value", None) is not None:
+            rule_data = build_legacy_power_rule(
+                value=float(device.threshold_value),
+                unit=provider_unit or "W",
+            )
+        if cls._rule_uses_battery_source(rule_data):
+            return True
+
+        scheduler = getattr(device, "scheduler", None)
+        for slot in getattr(scheduler, "slots", []) or []:
+            if cls._rule_uses_battery_source(getattr(slot, "activation_rule_json", None)):
+                return True
+
+        return False
+
+    def _ensure_capability_change_is_safe(
+        self,
+        db: Session,
+        *,
+        provider: Provider,
+        changes: dict,
+    ) -> None:
+        next_has_energy_storage = bool(
+            changes.get("has_energy_storage", provider.has_energy_storage)
+        )
+        if next_has_energy_storage:
+            return
+
+        next_unit_value = changes.get("unit", provider.unit)
+        if hasattr(next_unit_value, "value"):
+            next_unit_value = next_unit_value.value
+        provider_unit = str(next_unit_value) if next_unit_value is not None else None
+
+        microcontrollers = (
+            db.query(Microcontroller)
+            .filter(Microcontroller.power_provider_id == provider.id)
+            .all()
+        )
+
+        for microcontroller in microcontrollers:
+            for device in getattr(microcontroller, "devices", []) or []:
+                if self._device_uses_battery_rule(device, provider_unit):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Cannot disable energy storage on a provider that backs "
+                            "AUTO or scheduler devices using battery state-of-charge rules"
+                        ),
+                    )
 
     def get_provider(
         self,

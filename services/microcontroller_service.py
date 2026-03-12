@@ -130,21 +130,56 @@ class MicrocontrollerService:
                     ),
                 )
 
-    def register_microcontroller_admin(
+    def _normalize_and_validate_sensors(
         self,
-        db: Session,
-        *,
-        payload: dict,
-    ) -> Microcontroller:
-        assigned_sensors = self._normalize_sensor_values(
-            payload.pop("assigned_sensors", []) or []
-        )
+        sensors: list[str | SensorType],
+    ) -> list[str]:
+        normalized = self._normalize_sensor_values(sensors)
 
-        if len(set(assigned_sensors)) != len(assigned_sensors):
+        if len(set(normalized)) != len(normalized):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="assigned_sensors must not contain duplicates",
             )
+
+        return normalized
+
+    def _apply_assigned_sensors(
+        self,
+        db: Session,
+        *,
+        microcontroller: Microcontroller,
+        assigned_sensors: list[str],
+    ) -> None:
+        microcontroller.sensor_capabilities.clear()
+        db.flush()
+        microcontroller.sensor_capabilities.extend(
+            MicrocontrollerSensorCapability(sensor_type=s)
+            for s in assigned_sensors
+        )
+
+    def _sync_microcontroller_config(self, microcontroller: Microcontroller) -> None:
+        config = dict(microcontroller.config or {})
+
+        config["uuid"] = str(microcontroller.uuid)
+        config["device_max"] = microcontroller.max_devices
+        config["available_sensors"] = list(microcontroller.assigned_sensors)
+        config.pop("device_uuid", None)
+        config.setdefault("active_low", False)
+        config.setdefault("devices_config", [])
+        config.setdefault("provider", None)
+
+        microcontroller.config = config
+
+    def _register_microcontroller(
+        self,
+        db: Session,
+        *,
+        payload: dict[str, Any],
+    ) -> Microcontroller:
+        assigned_sensors = self._normalize_and_validate_sensors(
+            payload.pop("assigned_sensors", []) or []
+        )
 
         microcontroller = Microcontroller(
             **payload,
@@ -156,17 +191,65 @@ class MicrocontrollerService:
 
         db.add(microcontroller)
         db.flush()
+        self._sync_microcontroller_config(microcontroller)
+        db.commit()
+        db.refresh(microcontroller)
 
-        microcontroller.config = {
-            "uuid": str(microcontroller.uuid),
-            "device_max": microcontroller.max_devices,
-            "active_low": False,
-            "devices_config": [],
-            "provider": None,
-        }
+        return microcontroller
+
+    def register_microcontroller_admin(
+        self,
+        db: Session,
+        *,
+        payload: dict,
+    ) -> Microcontroller:
+        return self._register_microcontroller(db, payload=payload)
+
+    def register_microcontroller_for_user(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        payload: dict[str, Any],
+    ) -> Microcontroller:
+        payload["user_id"] = user_id
+        return self._register_microcontroller(db, payload=payload)
+
+    def _update_microcontroller(
+        self,
+        db: Session,
+        *,
+        microcontroller: Microcontroller,
+        data: dict[str, Any],
+        assigned_sensors: list[str | SensorType] | None,
+        allowed_fields: set[str],
+        log_message: str,
+    ) -> Microcontroller:
+        for field, value in data.items():
+            if field in allowed_fields:
+                setattr(microcontroller, field, value)
+
+        if assigned_sensors is not None:
+            normalized = self._normalize_and_validate_sensors(assigned_sensors)
+            self._apply_assigned_sensors(
+                db,
+                microcontroller=microcontroller,
+                assigned_sensors=normalized,
+            )
+
+        self._sync_microcontroller_config(microcontroller)
 
         db.commit()
         db.refresh(microcontroller)
+
+        self.logger.info(
+            log_message,
+            extra={
+                "microcontroller_id": microcontroller.id,
+                "fields": list(data.keys()),
+                "assigned_sensors": assigned_sensors,
+            },
+        )
 
         return microcontroller
 
@@ -187,53 +270,44 @@ class MicrocontrollerService:
                 detail="Microcontroller not found",
             )
 
-        for field, value in data.items():
-            if field in repo.ADMIN_UPDATE_FIELDS:
-                setattr(microcontroller, field, value)
-
-        if assigned_sensors is not None:
-            normalized = self._normalize_sensor_values(assigned_sensors)
-
-            if len(set(normalized)) != len(normalized):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="assigned_sensors must not contain duplicates",
-                )
-
-            microcontroller.sensor_capabilities.clear()
-            db.flush()
-
-            microcontroller.sensor_capabilities.extend(
-                MicrocontrollerSensorCapability(sensor_type=s) for s in normalized
-            )
-
-        config = microcontroller.config or {}
-
-        config["uuid"] = str(microcontroller.uuid)
-        config.pop("device_uuid", None)
-
-        if "max_devices" in data:
-            config["device_max"] = microcontroller.max_devices
-
-        config.setdefault("active_low", False)
-        config.setdefault("devices_config", [])
-        config.setdefault("provider", None)
-
-        microcontroller.config = config
-
-        db.commit()
-        db.refresh(microcontroller)
-
-        self.logger.info(
-            "Microcontroller updated by admin",
-            extra={
-                "microcontroller_id": microcontroller.id,
-                "fields": list(data.keys()),
-                "assigned_sensors": assigned_sensors,
-            },
+        return self._update_microcontroller(
+            db,
+            microcontroller=microcontroller,
+            data=data,
+            assigned_sensors=assigned_sensors,
+            allowed_fields=repo.ADMIN_UPDATE_FIELDS,
+            log_message="Microcontroller updated by admin",
         )
 
-        return microcontroller
+    def update_microcontroller_for_user(
+        self,
+        db: Session,
+        *,
+        microcontroller_uuid: UUID,
+        user_id: int,
+        data: dict[str, Any],
+        assigned_sensors: list[str | SensorType] | None,
+    ) -> Microcontroller:
+        repo = self._repo(db)
+
+        microcontroller = repo.get_for_user_by_uuid(
+            uuid=microcontroller_uuid,
+            user_id=user_id,
+        )
+        if not microcontroller:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Microcontroller not found",
+            )
+
+        return self._update_microcontroller(
+            db,
+            microcontroller=microcontroller,
+            data=data,
+            assigned_sensors=assigned_sensors,
+            allowed_fields=repo.USER_UPDATE_FIELDS,
+            log_message="Microcontroller updated by user",
+        )
 
     def _normalize_sensor_values(self, sensors: list[str | SensorType]) -> list[str]:
         return [

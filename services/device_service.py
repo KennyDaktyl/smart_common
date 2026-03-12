@@ -439,7 +439,7 @@ class DeviceService:
                     mode=device.mode.value,
                     rated_power=device.rated_power,
                     threshold_value=device.threshold_value,
-                    threshold_kw=device.threshold_value,
+                    threshold_unit=_provider_power_unit(microcontroller),
                     auto_rule=_rule_from_value(device.auto_rule_json),
                     scheduler_id=device.scheduler_id,
                     microcontroller_uuid=str(microcontroller.uuid),
@@ -528,7 +528,8 @@ class DeviceService:
                     device_number=updated.device_number,
                     mode=updated.mode.value,
                     rated_power=updated.rated_power,
-                    threshold_kw=updated.threshold_value,
+                    threshold_value=updated.threshold_value,
+                    threshold_unit=_provider_power_unit(device.microcontroller),
                     auto_rule=_rule_from_value(updated.auto_rule_json),
                     scheduler_id=updated.scheduler_id,
                 ),
@@ -693,6 +694,7 @@ class DeviceService:
                     if device.threshold_value is not None
                     else None
                 )
+                threshold_unit = _provider_power_unit(microcontroller)
                 auto_rule = _rule_from_value(device.auto_rule_json)
                 rated_power = (
                     float(device.rated_power) if device.rated_power is not None else None
@@ -704,6 +706,7 @@ class DeviceService:
                 item["mode"] = mode_value
                 item["rated_power"] = rated_power
                 item["threshold_value"] = threshold_value
+                item["threshold_unit"] = threshold_unit
                 item["auto_rule"] = (
                     auto_rule.model_dump() if auto_rule is not None else None
                 )
@@ -722,6 +725,7 @@ class DeviceService:
                 if device.threshold_value is not None
                 else None
             )
+            threshold_unit = _provider_power_unit(microcontroller)
             auto_rule = _rule_from_value(device.auto_rule_json)
             rated_power = (
                 float(device.rated_power) if device.rated_power is not None else None
@@ -735,6 +739,7 @@ class DeviceService:
                     "mode": mode_value,
                     "rated_power": rated_power,
                     "threshold_value": threshold_value,
+                    "threshold_unit": threshold_unit,
                     "auto_rule": (
                         auto_rule.model_dump() if auto_rule is not None else None
                     ),

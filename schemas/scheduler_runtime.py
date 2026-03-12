@@ -6,6 +6,7 @@ from uuid import UUID
 
 from smart_common.enums.scheduler import SchedulerCommandAction, SchedulerControlMode
 from smart_common.schemas.automation_rule import AutomationRuleGroup
+from smart_common.schemas.device_dependency import DeviceDependencyRule
 from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 
 
@@ -31,6 +32,7 @@ class DueSchedulerEntry:
     activation_rule: AutomationRuleGroup | None
     control_mode: SchedulerControlMode
     control_policy: SchedulerControlPolicy | None
+    device_dependency_rule: DeviceDependencyRule | None
 
 
 @dataclass(frozen=True)

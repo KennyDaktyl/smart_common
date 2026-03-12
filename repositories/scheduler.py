@@ -13,6 +13,7 @@ def _normalize_slot_payload(slot: dict) -> dict:
     normalized = dict(slot)
     activation_rule = normalized.pop("activation_rule", None)
     control_policy = normalized.pop("control_policy", None)
+    device_dependency_rule = normalized.pop("device_dependency_rule", None)
     normalized["activation_rule_json"] = (
         activation_rule.model_dump()
         if hasattr(activation_rule, "model_dump")
@@ -22,6 +23,15 @@ def _normalize_slot_payload(slot: dict) -> dict:
         control_policy.model_dump()
         if hasattr(control_policy, "model_dump")
         else (dict(control_policy) if isinstance(control_policy, dict) else None)
+    )
+    normalized["device_dependency_rule_json"] = (
+        device_dependency_rule.model_dump()
+        if hasattr(device_dependency_rule, "model_dump")
+        else (
+            dict(device_dependency_rule)
+            if isinstance(device_dependency_rule, dict)
+            else None
+        )
     )
     return normalized
 

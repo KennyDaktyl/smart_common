@@ -10,6 +10,7 @@ from smart_common.schemas.automation_rule import (
     extract_legacy_power_threshold,
 )
 from smart_common.schemas.base import APIModel, ORMModel
+from smart_common.schemas.device_dependency import DeviceDependencyRule
 
 
 class DeviceListQuery(BaseModel):
@@ -57,6 +58,7 @@ class DeviceBase(APIModel):
         example=22.5,
     )
     auto_rule: AutomationRuleGroup | None = None
+    device_dependency_rule: DeviceDependencyRule | None = None
     scheduler_id: Optional[int] = Field(
         None,
         ge=1,
@@ -91,6 +93,7 @@ class DeviceUpdateRequest(APIModel):
     manual_state: Optional[bool] = None
     threshold_value: Optional[float] = None
     auto_rule: AutomationRuleGroup | None = None
+    device_dependency_rule: DeviceDependencyRule | None = None
     scheduler_id: Optional[int] = Field(None, ge=1)
 
     @model_validator(mode="after")
@@ -122,6 +125,10 @@ class DeviceResponse(ORMModel):
     rated_power: Optional[float]
     threshold_value: Optional[float]
     auto_rule: AutomationRuleGroup | None = Field(default=None, alias="auto_rule_json")
+    device_dependency_rule: DeviceDependencyRule | None = Field(
+        default=None,
+        alias="device_dependency_rule_json",
+    )
     manual_state: Optional[bool]
     last_state_change_at: Optional[datetime]
     created_at: datetime

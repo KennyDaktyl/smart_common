@@ -13,6 +13,7 @@ from smart_common.schemas.automation_rule import (
     extract_legacy_power_threshold,
 )
 from smart_common.schemas.base import APIModel, ORMModel
+from smart_common.schemas.device_dependency import DeviceDependencyRule
 from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 
 HHMM_PATTERN = r"^(?:[01]\d|2[0-3]):[0-5]\d$"
@@ -44,6 +45,7 @@ class SchedulerSlotIn(APIModel):
     activation_rule: AutomationRuleGroup | None = None
     control_mode: SchedulerControlMode = SchedulerControlMode.DIRECT
     control_policy: SchedulerControlPolicy | None = None
+    device_dependency_rule: DeviceDependencyRule | None = None
 
     @model_validator(mode="after")
     def normalize_and_validate(self):
@@ -146,6 +148,10 @@ class SchedulerSlotResponse(ORMModel):
     control_policy: SchedulerControlPolicy | None = Field(
         default=None,
         alias="control_policy_json",
+    )
+    device_dependency_rule: DeviceDependencyRule | None = Field(
+        default=None,
+        alias="device_dependency_rule_json",
     )
     activation_rule: AutomationRuleGroup | None = Field(
         default=None,

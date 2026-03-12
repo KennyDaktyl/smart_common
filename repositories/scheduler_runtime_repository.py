@@ -16,6 +16,7 @@ from smart_common.models.provider_measurement import ProviderMeasurement
 from smart_common.models.scheduler import Scheduler
 from smart_common.models.scheduler_slot import SchedulerSlot
 from smart_common.schemas.automation_rule import AutomationRuleGroup
+from smart_common.schemas.device_dependency import DeviceDependencyRule
 from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 from smart_common.schemas.scheduler_runtime import DueSchedulerEntry
 
@@ -51,6 +52,7 @@ class SchedulerRuntimeRepository:
                 SchedulerSlot.activation_rule_json,
                 SchedulerSlot.control_mode,
                 SchedulerSlot.control_policy_json,
+                SchedulerSlot.device_dependency_rule_json,
             )
             .join(Microcontroller, Device.microcontroller_id == Microcontroller.id)
             .join(Scheduler, Device.scheduler_id == Scheduler.id)
@@ -98,6 +100,7 @@ class SchedulerRuntimeRepository:
                 SchedulerSlot.activation_rule_json,
                 SchedulerSlot.control_mode,
                 SchedulerSlot.control_policy_json,
+                SchedulerSlot.device_dependency_rule_json,
             )
             .join(Microcontroller, Device.microcontroller_id == Microcontroller.id)
             .join(Scheduler, Device.scheduler_id == Scheduler.id)
@@ -201,6 +204,7 @@ def _map_due_entries(rows: list[tuple]) -> list[DueSchedulerEntry]:
                 activation_rule=_parse_activation_rule(row[11]),
                 control_mode=row[12] or SchedulerControlMode.DIRECT,
                 control_policy=_parse_control_policy(row[13]),
+                device_dependency_rule=_parse_device_dependency_rule(row[14]),
             )
         )
     return result
@@ -220,5 +224,14 @@ def _parse_control_policy(value: object) -> SchedulerControlPolicy | None:
         return None
     try:
         return SchedulerControlPolicy.model_validate(value)
+    except Exception:
+        return None
+
+
+def _parse_device_dependency_rule(value: object) -> DeviceDependencyRule | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        return DeviceDependencyRule.model_validate(value)
     except Exception:
         return None

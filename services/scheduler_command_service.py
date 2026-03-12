@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 class SchedulerCommandService:
     async def publish_command(self, *, command: DispatchCommandEntry) -> None:
+        command_payload = command.command_payload or {}
+        scheduler_policy_payload = command_payload.get("scheduler_policy")
+        if scheduler_policy_payload is None and command.action in {
+            SchedulerCommandAction.ENABLE_POLICY,
+            SchedulerCommandAction.DISABLE_POLICY,
+        }:
+            scheduler_policy_payload = command.command_payload
+
         payload = DeviceCommandPayload(
             command_id=str(command.command_id),
             device_id=command.device_id,
@@ -38,7 +46,8 @@ class SchedulerCommandService:
                 if command.action == SchedulerCommandAction.DISABLE_POLICY
                 else None
             ),
-            scheduler_policy=command.command_payload,
+            scheduler_policy=scheduler_policy_payload,
+            device_dependency_rule=command_payload.get("device_dependency_rule"),
         )
         payload_data = payload.model_dump(mode="json")
 

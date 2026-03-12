@@ -4,6 +4,7 @@ from smart_common.enums.event import EventType
 from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 from smart_common.schemas.automation_rule import AutomationRuleGroup
 from smart_common.schemas.base import APIModel
+from smart_common.schemas.device_dependency import DeviceDependencyRule
 
 
 class BaseEvent(APIModel):
@@ -19,6 +20,7 @@ class DeviceCreatedPayload(APIModel):
     threshold_value: Optional[float] = None
     threshold_unit: Optional[str] = None
     auto_rule: Optional[AutomationRuleGroup] = None
+    device_dependency_rule: DeviceDependencyRule | None = None
     scheduler_id: Optional[int] = None
     microcontroller_uuid: Optional[str] = None
 
@@ -36,6 +38,7 @@ class DeviceUpdatedPayload(APIModel):
     threshold_value: Optional[float] = None
     threshold_unit: Optional[str] = None
     auto_rule: Optional[AutomationRuleGroup] = None
+    device_dependency_rule: DeviceDependencyRule | None = None
     scheduler_id: Optional[int] = None
 
 
@@ -63,6 +66,7 @@ class DeviceCommandPayload(APIModel):
     is_on: bool
     scheduler_policy_enabled: bool | None = None
     scheduler_policy: SchedulerControlPolicy | None = None
+    device_dependency_rule: DeviceDependencyRule | None = None
 
 
 class DeviceCommandEvent(BaseEvent):

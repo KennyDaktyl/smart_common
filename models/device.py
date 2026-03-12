@@ -53,6 +53,11 @@ class Device(Base):
         nullable=True,
         comment="Structured AUTO mode rule for device",
     )
+    device_dependency_rule_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Structured source->target dependency rule for device runtime",
+    )
     last_state_change_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )

@@ -82,5 +82,10 @@ class SchedulerSlot(Base):
         nullable=True,
         comment="Structured control policy dispatched to the agent for this slot",
     )
+    device_dependency_rule_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Structured source->target dependency rule applied while slot is active",
+    )
 
     scheduler = relationship("Scheduler", back_populates="slots")

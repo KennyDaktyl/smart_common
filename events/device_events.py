@@ -17,7 +17,7 @@ class DeviceCreatedPayload(APIModel):
     mode: str
     rated_power: Optional[float] = None
     threshold_value: Optional[float] = None
-    threshold_kw: Optional[float] = None
+    threshold_unit: Optional[str] = None
     auto_rule: Optional[AutomationRuleGroup] = None
     scheduler_id: Optional[int] = None
     microcontroller_uuid: Optional[str] = None
@@ -33,7 +33,8 @@ class DeviceUpdatedPayload(APIModel):
     device_id: int
     mode: str
     rated_power: Optional[float] = None
-    threshold_kw: Optional[float] = None
+    threshold_value: Optional[float] = None
+    threshold_unit: Optional[str] = None
     auto_rule: Optional[AutomationRuleGroup] = None
     scheduler_id: Optional[int] = None
 

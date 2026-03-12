@@ -27,6 +27,12 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
     model = Microcontroller
     default_order_by = Microcontroller.id.asc()
 
+    USER_UPDATE_FIELDS = {
+        "name",
+        "description",
+        "software_version",
+    }
+
     ADMIN_UPDATE_FIELDS = {
         "name",
         "description",
@@ -66,6 +72,15 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
             .all()
         )
 
+        self._attach_available_api_providers(microcontrollers, user_id)
+
+        return microcontrollers
+
+    def _attach_available_api_providers(
+        self,
+        microcontrollers: list[Microcontroller],
+        user_id: int,
+    ) -> None:
         providers = (
             self.session.query(Provider)
             .filter(
@@ -79,12 +94,10 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
         for mc in microcontrollers:
             mc.__dict__["available_api_providers"] = providers
 
-        return microcontrollers
-
     def get_for_user_by_uuid(
         self, uuid: UUID, user_id: int
     ) -> Optional[Microcontroller]:
-        return (
+        microcontroller = (
             self.session.query(self.model)
             .filter(
                 self.model.uuid == uuid,
@@ -93,6 +106,11 @@ class MicrocontrollerRepository(BaseRepository[Microcontroller]):
             .options(*self._full_options())
             .one_or_none()
         )
+
+        if microcontroller:
+            self._attach_available_api_providers([microcontroller], user_id)
+
+        return microcontroller
 
     def get_full_by_id(self, microcontroller_id: int) -> Optional[Microcontroller]:
         return (

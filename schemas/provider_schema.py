@@ -26,6 +26,9 @@ class MicrocontrollerProviderConfig(APIModel):
         description="UUID of the provider",
     )
     external_id: str = ""
+    unit: PowerUnit | None = None
+    has_power_meter: bool = False
+    has_energy_storage: bool = False
 
     @field_validator("uuid", mode="before")
     @classmethod

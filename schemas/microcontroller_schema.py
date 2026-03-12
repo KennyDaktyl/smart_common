@@ -117,6 +117,7 @@ class DeviceConfig(APIModel):
     mode: DeviceMode
     rated_power: Optional[float] = None
     threshold_value: Optional[float] = None
+    threshold_unit: Optional[str] = None
     auto_rule: Optional[AutomationRuleGroup] = None
     desired_state: Optional[bool] = None
     is_on: Optional[bool] = None
@@ -135,6 +136,7 @@ class MicrocontrollerConfig(APIModel):
     uuid: Optional[UUID] = None
     device_max: int = Field(1, ge=1)
     active_low: bool = False
+    available_sensors: List[str] = Field(default_factory=list)
     devices_config: List[DeviceConfig] = Field(default_factory=list)
     provider: Optional[MicrocontrollerProviderConfig] = None
 

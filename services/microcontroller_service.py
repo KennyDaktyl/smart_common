@@ -25,6 +25,12 @@ from smart_common.providers.enums import ProviderKind, ProviderType
 from smart_common.providers.registry import resolve_sensor_type
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
 from smart_common.repositories.provider import ProviderRepository
+from smart_common.schemas.automation_rule import (
+    AutomationRuleGroup,
+    AutomationRuleSource,
+    build_legacy_power_rule,
+    uses_source,
+)
 from smart_common.schemas.microcontroller_schema import (
     MicrocontrollerAgentCommand,
     MicrocontrollerAgentConfigFilesUpdateRequest,
@@ -56,21 +62,124 @@ class MicrocontrollerService:
             )
         return self._provider_repo_factory(db)
 
-    def register_microcontroller_admin(
-        self,
-        db: Session,
-        *,
-        payload: dict,
-    ) -> Microcontroller:
-        assigned_sensors = self._normalize_sensor_values(
-            payload.pop("assigned_sensors", []) or []
+    @staticmethod
+    def _provider_config_payload(provider) -> dict[str, Any] | None:
+        if provider is None:
+            return None
+
+        return {
+            "uuid": str(provider.uuid),
+            "external_id": provider.external_id or "",
+            "unit": provider.unit.value if getattr(provider, "unit", None) is not None else None,
+            "has_power_meter": bool(getattr(provider, "has_power_meter", False)),
+            "has_energy_storage": bool(getattr(provider, "has_energy_storage", False)),
+        }
+
+    @staticmethod
+    def _rule_uses_battery_source(rule_data) -> bool:
+        if rule_data is None:
+            return False
+        if isinstance(rule_data, dict):
+            try:
+                rule_data = AutomationRuleGroup.model_validate(rule_data)
+            except Exception:
+                return False
+        return uses_source(
+            rule_data,
+            AutomationRuleSource.PROVIDER_BATTERY_SOC,
         )
 
-        if len(set(assigned_sensors)) != len(assigned_sensors):
+    @classmethod
+    def _device_uses_battery_rule(cls, device, provider_unit: str | None) -> bool:
+        rule_data = getattr(device, "auto_rule_json", None)
+        if rule_data is None and getattr(device, "threshold_value", None) is not None:
+            rule_data = build_legacy_power_rule(
+                value=float(device.threshold_value),
+                unit=provider_unit or "W",
+            )
+        if cls._rule_uses_battery_source(rule_data):
+            return True
+
+        scheduler = getattr(device, "scheduler", None)
+        for slot in getattr(scheduler, "slots", []) or []:
+            if cls._rule_uses_battery_source(getattr(slot, "activation_rule_json", None)):
+                return True
+
+        return False
+
+    def _ensure_provider_supports_existing_device_rules(
+        self,
+        *,
+        microcontroller: Microcontroller,
+        provider,
+    ) -> None:
+        if provider is None:
+            return
+
+        provider_unit = provider.unit.value if getattr(provider, "unit", None) is not None else None
+        if bool(getattr(provider, "has_energy_storage", False)):
+            return
+
+        for device in getattr(microcontroller, "devices", []) or []:
+            if self._device_uses_battery_rule(device, provider_unit):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Selected provider does not support battery state-of-charge "
+                        "rules required by existing AUTO or scheduler devices"
+                    ),
+                )
+
+    def _normalize_and_validate_sensors(
+        self,
+        sensors: list[str | SensorType],
+    ) -> list[str]:
+        normalized = self._normalize_sensor_values(sensors)
+
+        if len(set(normalized)) != len(normalized):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="assigned_sensors must not contain duplicates",
             )
+
+        return normalized
+
+    def _apply_assigned_sensors(
+        self,
+        db: Session,
+        *,
+        microcontroller: Microcontroller,
+        assigned_sensors: list[str],
+    ) -> None:
+        microcontroller.sensor_capabilities.clear()
+        db.flush()
+        microcontroller.sensor_capabilities.extend(
+            MicrocontrollerSensorCapability(sensor_type=s)
+            for s in assigned_sensors
+        )
+
+    def _sync_microcontroller_config(self, microcontroller: Microcontroller) -> None:
+        config = dict(microcontroller.config or {})
+
+        config["uuid"] = str(microcontroller.uuid)
+        config["device_max"] = microcontroller.max_devices
+        config["available_sensors"] = list(microcontroller.assigned_sensors)
+        config.pop("device_uuid", None)
+        config.setdefault("active_low", False)
+        config.setdefault("devices_config", [])
+        config.setdefault("provider", None)
+
+        microcontroller.config = config
+
+    def _register_microcontroller(
+        self,
+        db: Session,
+        *,
+        payload: dict[str, Any],
+    ) -> Microcontroller:
+        assigned_sensors = self._normalize_and_validate_sensors(
+            payload.pop("assigned_sensors", []) or []
+        )
 
         microcontroller = Microcontroller(
             **payload,
@@ -82,17 +191,65 @@ class MicrocontrollerService:
 
         db.add(microcontroller)
         db.flush()
+        self._sync_microcontroller_config(microcontroller)
+        db.commit()
+        db.refresh(microcontroller)
 
-        microcontroller.config = {
-            "uuid": str(microcontroller.uuid),
-            "device_max": microcontroller.max_devices,
-            "active_low": False,
-            "devices_config": [],
-            "provider": None,
-        }
+        return microcontroller
+
+    def register_microcontroller_admin(
+        self,
+        db: Session,
+        *,
+        payload: dict,
+    ) -> Microcontroller:
+        return self._register_microcontroller(db, payload=payload)
+
+    def register_microcontroller_for_user(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        payload: dict[str, Any],
+    ) -> Microcontroller:
+        payload["user_id"] = user_id
+        return self._register_microcontroller(db, payload=payload)
+
+    def _update_microcontroller(
+        self,
+        db: Session,
+        *,
+        microcontroller: Microcontroller,
+        data: dict[str, Any],
+        assigned_sensors: list[str | SensorType] | None,
+        allowed_fields: set[str],
+        log_message: str,
+    ) -> Microcontroller:
+        for field, value in data.items():
+            if field in allowed_fields:
+                setattr(microcontroller, field, value)
+
+        if assigned_sensors is not None:
+            normalized = self._normalize_and_validate_sensors(assigned_sensors)
+            self._apply_assigned_sensors(
+                db,
+                microcontroller=microcontroller,
+                assigned_sensors=normalized,
+            )
+
+        self._sync_microcontroller_config(microcontroller)
 
         db.commit()
         db.refresh(microcontroller)
+
+        self.logger.info(
+            log_message,
+            extra={
+                "microcontroller_id": microcontroller.id,
+                "fields": list(data.keys()),
+                "assigned_sensors": assigned_sensors,
+            },
+        )
 
         return microcontroller
 
@@ -113,53 +270,44 @@ class MicrocontrollerService:
                 detail="Microcontroller not found",
             )
 
-        for field, value in data.items():
-            if field in repo.ADMIN_UPDATE_FIELDS:
-                setattr(microcontroller, field, value)
-
-        if assigned_sensors is not None:
-            normalized = self._normalize_sensor_values(assigned_sensors)
-
-            if len(set(normalized)) != len(normalized):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="assigned_sensors must not contain duplicates",
-                )
-
-            microcontroller.sensor_capabilities.clear()
-            db.flush()
-
-            microcontroller.sensor_capabilities.extend(
-                MicrocontrollerSensorCapability(sensor_type=s) for s in normalized
-            )
-
-        config = microcontroller.config or {}
-
-        config["uuid"] = str(microcontroller.uuid)
-        config.pop("device_uuid", None)
-
-        if "max_devices" in data:
-            config["device_max"] = microcontroller.max_devices
-
-        config.setdefault("active_low", False)
-        config.setdefault("devices_config", [])
-        config.setdefault("provider", None)
-
-        microcontroller.config = config
-
-        db.commit()
-        db.refresh(microcontroller)
-
-        self.logger.info(
-            "Microcontroller updated by admin",
-            extra={
-                "microcontroller_id": microcontroller.id,
-                "fields": list(data.keys()),
-                "assigned_sensors": assigned_sensors,
-            },
+        return self._update_microcontroller(
+            db,
+            microcontroller=microcontroller,
+            data=data,
+            assigned_sensors=assigned_sensors,
+            allowed_fields=repo.ADMIN_UPDATE_FIELDS,
+            log_message="Microcontroller updated by admin",
         )
 
-        return microcontroller
+    def update_microcontroller_for_user(
+        self,
+        db: Session,
+        *,
+        microcontroller_uuid: UUID,
+        user_id: int,
+        data: dict[str, Any],
+        assigned_sensors: list[str | SensorType] | None,
+    ) -> Microcontroller:
+        repo = self._repo(db)
+
+        microcontroller = repo.get_for_user_by_uuid(
+            uuid=microcontroller_uuid,
+            user_id=user_id,
+        )
+        if not microcontroller:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Microcontroller not found",
+            )
+
+        return self._update_microcontroller(
+            db,
+            microcontroller=microcontroller,
+            data=data,
+            assigned_sensors=assigned_sensors,
+            allowed_fields=repo.USER_UPDATE_FIELDS,
+            log_message="Microcontroller updated by user",
+        )
 
     def _normalize_sensor_values(self, sensors: list[str | SensorType]) -> list[str]:
         return [
@@ -444,6 +592,9 @@ class MicrocontrollerService:
         next_provider_id: int | None = None
         next_provider_uuid = str(provider_uuid) if provider_uuid is not None else None
         next_provider_unit: str | None = None
+        next_provider_has_power_meter = False
+        next_provider_has_energy_storage = False
+        next_provider_config: dict[str, Any] | None = None
 
         if provider_uuid is not None:
             provider = self._provider_repo(db).get_for_user_by_uuid(provider_uuid, user_id)
@@ -452,9 +603,16 @@ class MicrocontrollerService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Provider not found or not available",
                 )
+            self._ensure_provider_supports_existing_device_rules(
+                microcontroller=microcontroller,
+                provider=provider,
+            )
             next_provider_id = provider.id
             next_provider_uuid = str(provider.uuid)
             next_provider_unit = provider.unit.value if provider.unit is not None else None
+            next_provider_has_power_meter = bool(provider.has_power_meter)
+            next_provider_has_energy_storage = bool(provider.has_energy_storage)
+            next_provider_config = self._provider_config_payload(provider)
 
         if (
             previous_provider_uuid == next_provider_uuid
@@ -475,9 +633,14 @@ class MicrocontrollerService:
             provider_uuid=next_provider_uuid,
             previous_provider_uuid=previous_provider_uuid,
             unit=next_provider_unit,
+            has_power_meter=next_provider_has_power_meter,
+            has_energy_storage=next_provider_has_energy_storage,
         )
 
         microcontroller.power_provider_id = next_provider_id
+        config = dict(microcontroller.config or {})
+        config["provider"] = next_provider_config
+        microcontroller.config = config
         db.commit()
         db.refresh(microcontroller)
 
@@ -489,6 +652,8 @@ class MicrocontrollerService:
                 "provider_uuid": next_provider_uuid,
                 "previous_unit": previous_provider_unit,
                 "unit": next_provider_unit,
+                "has_power_meter": next_provider_has_power_meter,
+                "has_energy_storage": next_provider_has_energy_storage,
                 "ack_changed": ack_data.get("changed"),
             },
         )
@@ -502,6 +667,8 @@ class MicrocontrollerService:
         provider_uuid: str | None,
         previous_provider_uuid: str | None,
         unit: str | None,
+        has_power_meter: bool,
+        has_energy_storage: bool,
     ) -> dict:
         event_type = EventType.PROVIDER_UPDATED
         subject = f"{stream_name()}.{microcontroller_uuid}.command.provider_updated"
@@ -511,12 +678,19 @@ class MicrocontrollerService:
                 entity_type="microcontroller",
                 entity_id=microcontroller_uuid,
                 event_type=event_type,
-                data={"provider_uuid": provider_uuid, "unit": unit},
+                data={
+                    "provider_uuid": provider_uuid,
+                    "unit": unit,
+                    "has_power_meter": has_power_meter,
+                    "has_energy_storage": has_energy_storage,
+                },
                 predicate=lambda payload: self._provider_updated_ack_matches(
                     payload=payload,
                     microcontroller_uuid=microcontroller_uuid,
                     provider_uuid=provider_uuid,
                     unit=unit,
+                    has_power_meter=has_power_meter,
+                    has_energy_storage=has_energy_storage,
                 ),
                 timeout=10.0,
                 subject=subject,
@@ -542,10 +716,11 @@ class MicrocontrollerService:
                 detail="Agent rejected provider update",
             )
 
-        if ack_data.get("changed") is not True:
+        changed = ack_data.get("changed")
+        if changed not in {True, False}:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Agent did not confirm provider change",
+                detail="Agent returned invalid provider update acknowledgement",
             )
 
         if str(ack_data.get("microcontroller_uuid")) != microcontroller_uuid:
@@ -568,17 +743,25 @@ class MicrocontrollerService:
                 detail="Agent ACK provider_uuid mismatch",
             )
 
-        got_previous = ack_data.get("previous_provider_uuid")
-        if previous_provider_uuid is None:
-            if got_previous is not None:
+        if changed is True:
+            got_previous = ack_data.get("previous_provider_uuid")
+            if previous_provider_uuid is None:
+                if got_previous is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Agent ACK previous_provider_uuid mismatch",
+                    )
+            elif str(got_previous) != previous_provider_uuid:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Agent ACK previous_provider_uuid mismatch",
                 )
-        elif str(got_previous) != previous_provider_uuid:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Agent ACK previous_provider_uuid mismatch",
+
+        if changed is False:
+            self.logger.info(
+                "Agent provider update was idempotent | mc_uuid=%s provider_uuid=%s",
+                microcontroller_uuid,
+                provider_uuid,
             )
 
         return ack_data
@@ -590,6 +773,8 @@ class MicrocontrollerService:
         microcontroller_uuid: str,
         provider_uuid: str | None,
         unit: str | None,
+        has_power_meter: bool,
+        has_energy_storage: bool,
     ) -> bool:
         if not isinstance(payload, dict):
             return False
@@ -610,8 +795,16 @@ class MicrocontrollerService:
 
         incoming_unit = data.get("unit")
         if unit is None:
-            return incoming_unit is None
-        return str(incoming_unit) == unit
+            if incoming_unit is not None:
+                return False
+        elif str(incoming_unit) != unit:
+            return False
+
+        if bool(data.get("has_power_meter", False)) != has_power_meter:
+            return False
+        if bool(data.get("has_energy_storage", False)) != has_energy_storage:
+            return False
+        return True
 
     # def __init__(
     #     self,

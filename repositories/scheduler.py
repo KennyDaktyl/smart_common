@@ -12,10 +12,16 @@ from smart_common.repositories.base import BaseRepository
 def _normalize_slot_payload(slot: dict) -> dict:
     normalized = dict(slot)
     activation_rule = normalized.pop("activation_rule", None)
+    control_policy = normalized.pop("control_policy", None)
     normalized["activation_rule_json"] = (
         activation_rule.model_dump()
         if hasattr(activation_rule, "model_dump")
         else (dict(activation_rule) if isinstance(activation_rule, dict) else None)
+    )
+    normalized["control_policy_json"] = (
+        control_policy.model_dump()
+        if hasattr(control_policy, "model_dump")
+        else (dict(control_policy) if isinstance(control_policy, dict) else None)
     )
     return normalized
 

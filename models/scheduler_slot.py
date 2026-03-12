@@ -4,7 +4,7 @@ from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smart_common.core.db import Base
-from smart_common.enums.scheduler import SchedulerDayOfWeek
+from smart_common.enums.scheduler import SchedulerControlMode, SchedulerDayOfWeek
 
 
 class SchedulerSlot(Base):
@@ -70,6 +70,17 @@ class SchedulerSlot(Base):
         JSON,
         nullable=True,
         comment="Structured activation rule for scheduler slot",
+    )
+    control_mode: Mapped[SchedulerControlMode] = mapped_column(
+        Enum(SchedulerControlMode, name="scheduler_control_mode_enum"),
+        nullable=False,
+        default=SchedulerControlMode.DIRECT,
+        server_default=SchedulerControlMode.DIRECT.value,
+    )
+    control_policy_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Structured control policy dispatched to the agent for this slot",
     )
 
     scheduler = relationship("Scheduler", back_populates="slots")

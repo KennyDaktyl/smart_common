@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID as UUIDType
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -97,6 +97,10 @@ class SchedulerCommand(Base):
     trigger_reason: Mapped[str | None] = mapped_column(String)
     measured_value: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
     measured_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    command_payload_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

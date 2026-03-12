@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Union
 
 from smart_common.enums.event import EventType
+from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 from smart_common.schemas.automation_rule import AutomationRuleGroup
 from smart_common.schemas.base import APIModel
 
@@ -59,6 +60,8 @@ class DeviceCommandPayload(APIModel):
     mode: str
     command: str
     is_on: bool
+    scheduler_policy_enabled: bool | None = None
+    scheduler_policy: SchedulerControlPolicy | None = None
 
 
 class DeviceCommandEvent(BaseEvent):

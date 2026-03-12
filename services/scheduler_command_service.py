@@ -19,15 +19,28 @@ logger = logging.getLogger(__name__)
 
 class SchedulerCommandService:
     async def publish_command(self, *, command: DispatchCommandEntry) -> None:
-        payload_data = DeviceCommandPayload(
+        payload = DeviceCommandPayload(
             command_id=str(command.command_id),
             device_id=command.device_id,
             device_uuid=str(command.device_uuid),
             device_number=command.device_number,
-            command="SET_STATE",
+            command=(
+                "SET_STATE"
+                if command.action in {SchedulerCommandAction.ON, SchedulerCommandAction.OFF}
+                else "SET_SCHEDULER_POLICY"
+            ),
             mode=DeviceMode.SCHEDULE.value,
             is_on=command.action == SchedulerCommandAction.ON,
-        ).model_dump(mode="json")
+            scheduler_policy_enabled=(
+                True
+                if command.action == SchedulerCommandAction.ENABLE_POLICY
+                else False
+                if command.action == SchedulerCommandAction.DISABLE_POLICY
+                else None
+            ),
+            scheduler_policy=command.command_payload,
+        )
+        payload_data = payload.model_dump(mode="json")
 
         subject = subject_for_entity(
             str(command.microcontroller_uuid),

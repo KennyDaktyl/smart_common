@@ -14,6 +14,8 @@ from smart_common.providers.enums import (
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.provider_measurement_schemas import (
     DayEnergyOut,
+    ProviderMatchedRevenueOut,
+    ProviderMarketPriceOut,
     ProviderMetricSeriesOut,
     ProviderMeasurementResponse,
     ProviderTelemetryMetricDefinition,
@@ -139,6 +141,9 @@ class ProviderTelemetryResponse(APIModel):
     energy_unit: str | None = None
     day: DayEnergyOut
     metrics: list[ProviderMetricSeriesOut] = Field(default_factory=list)
+    settlement_price: ProviderMarketPriceOut | None = None
+    forecast_price: ProviderMarketPriceOut | None = None
+    matched_revenue: ProviderMatchedRevenueOut | None = None
 
 
 class ProviderEnabledUpdateRequest(APIModel):

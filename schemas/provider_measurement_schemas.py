@@ -36,6 +36,13 @@ class ProviderTelemetryMetricDefinition(BaseModel):
 class HourlyEnergyPoint(BaseModel):
     hour: datetime
     energy: float
+    revenue: float | None = None
+
+
+class HourlyRevenuePoint(BaseModel):
+    hour: datetime
+    revenue: float
+    export_energy: float
 
 
 class EnergyEntryPoint(BaseModel):
@@ -108,3 +115,36 @@ class ProviderMetricSeriesOut(BaseModel):
     date: str
     entries: List[ProviderMetricPoint] = []
     hours: List[ProviderMetricHourlyPoint] = []
+
+
+class MarketEnergyPricePointOut(BaseModel):
+    interval_start: datetime
+    interval_end: datetime
+    price: float
+    currency: str
+    unit: str
+
+
+class ProviderMarketPriceOut(BaseModel):
+    market: str
+    label: str
+    price: float
+    currency: str
+    unit: str
+    interval_start: datetime
+    interval_end: datetime
+    source_updated_at: datetime | None = None
+    price_per_energy_unit: float | None = None
+    energy_unit: str | None = None
+    history: List[MarketEnergyPricePointOut] = []
+
+
+class ProviderMatchedRevenueOut(BaseModel):
+    market: str
+    label: str
+    currency: str
+    energy_unit: str | None = None
+    total_export_energy: float = 0.0
+    total_revenue: float = 0.0
+    matched_intervals: int = 0
+    hours: List[HourlyRevenuePoint] = []

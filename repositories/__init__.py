@@ -7,6 +7,7 @@ from .provider import ProviderRepository
 from .scheduler import SchedulerRepository
 from .scheduler_runtime_repository import SchedulerRuntimeRepository
 from .measurement_repository import MeasurementRepository
+from .market_energy_price import MarketEnergyPriceRepository
 from .user import UserRepository
 from .scheduler_command_repository import SchedulerCommandRepository
 
@@ -21,5 +22,6 @@ __all__ = [
     "MicrocontrollerRepository",
     "UserRepository",
     "MeasurementRepository",
+    "MarketEnergyPriceRepository",
     "SchedulerCommandRepository",
 ]

@@ -1,8 +1,8 @@
 # smart_common/services/energy_calculation_service.py
 
-from dataclasses import dataclass
-from datetime import datetime
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,11 @@ class EnergyInterval:
 
 class EnergyCalculationService:
     @staticmethod
-    def integrate_intervals(samples: list[PowerSample]) -> list[EnergyInterval]:
+    def integrate_intervals(
+        samples: list[PowerSample],
+        *,
+        max_interval_seconds: float | None = None,
+    ) -> list[EnergyInterval]:
         intervals: list[EnergyInterval] = []
         if len(samples) < 2:
             return intervals
@@ -28,7 +32,13 @@ class EnergyCalculationService:
             a = samples[i]
             b = samples[i + 1]
 
-            dt_hours = (b.ts - a.ts).total_seconds() / 3600
+            interval_end = b.ts
+            if max_interval_seconds is not None and max_interval_seconds > 0:
+                capped_end = a.ts + timedelta(seconds=max_interval_seconds)
+                if capped_end < interval_end:
+                    interval_end = capped_end
+
+            dt_hours = (interval_end - a.ts).total_seconds() / 3600
             if dt_hours <= 0:
                 continue
 
@@ -37,7 +47,11 @@ class EnergyCalculationService:
         return intervals
 
     @staticmethod
-    def integrate_hourly(samples: list[PowerSample]) -> dict[datetime, float]:
+    def integrate_hourly(
+        samples: list[PowerSample],
+        *,
+        max_interval_seconds: float | None = None,
+    ) -> dict[datetime, float]:
         """
         Zwraca energię w JEDNOSTCE PROVIDERA:
         - jeśli power był w kW → wynik w kWh
@@ -45,7 +59,32 @@ class EnergyCalculationService:
         """
         energy_by_hour: dict[datetime, float] = defaultdict(float)
 
-        for interval in EnergyCalculationService.integrate_intervals(samples):
-            hour_bucket = interval.ts.replace(minute=0, second=0, microsecond=0)
-            energy_by_hour[hour_bucket] += interval.energy
+        for left, right in zip(samples, samples[1:]):
+            interval_start = left.ts
+            interval_end = right.ts
+            if max_interval_seconds is not None and max_interval_seconds > 0:
+                capped_end = interval_start + timedelta(seconds=max_interval_seconds)
+                if capped_end < interval_end:
+                    interval_end = capped_end
+            if interval_end <= interval_start:
+                continue
+
+            total_dt_hours = (interval_end - interval_start).total_seconds() / 3600.0
+            if total_dt_hours <= 0:
+                continue
+
+            interval_energy = left.value * total_dt_hours
+            if interval_energy == 0:
+                continue
+            cursor = interval_start
+            while cursor < interval_end:
+                hour_bucket = cursor.replace(minute=0, second=0, microsecond=0)
+                next_hour = hour_bucket + timedelta(hours=1)
+                segment_end = min(interval_end, next_hour)
+                dt_hours = (segment_end - cursor).total_seconds() / 3600.0
+                if dt_hours > 0:
+                    energy_by_hour[hour_bucket] += interval_energy * (
+                        dt_hours / total_dt_hours
+                    )
+                cursor = segment_end
         return energy_by_hour

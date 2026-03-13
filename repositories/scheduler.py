@@ -9,6 +9,33 @@ from smart_common.models.scheduler_slot import SchedulerSlot
 from smart_common.repositories.base import BaseRepository
 
 
+def _normalize_slot_payload(slot: dict) -> dict:
+    normalized = dict(slot)
+    activation_rule = normalized.pop("activation_rule", None)
+    control_policy = normalized.pop("control_policy", None)
+    device_dependency_rule = normalized.pop("device_dependency_rule", None)
+    normalized["activation_rule_json"] = (
+        activation_rule.model_dump()
+        if hasattr(activation_rule, "model_dump")
+        else (dict(activation_rule) if isinstance(activation_rule, dict) else None)
+    )
+    normalized["control_policy_json"] = (
+        control_policy.model_dump()
+        if hasattr(control_policy, "model_dump")
+        else (dict(control_policy) if isinstance(control_policy, dict) else None)
+    )
+    normalized["device_dependency_rule_json"] = (
+        device_dependency_rule.model_dump()
+        if hasattr(device_dependency_rule, "model_dump")
+        else (
+            dict(device_dependency_rule)
+            if isinstance(device_dependency_rule, dict)
+            else None
+        )
+    )
+    return normalized
+
+
 class SchedulerRepository(BaseRepository[Scheduler]):
     model = Scheduler
     default_order_by = Scheduler.created_at.desc()
@@ -47,7 +74,7 @@ class SchedulerRepository(BaseRepository[Scheduler]):
             name=name,
             timezone=timezone_name,
             utc_offset_minutes=utc_offset_minutes,
-            slots=[SchedulerSlot(**slot) for slot in slots],
+            slots=[SchedulerSlot(**_normalize_slot_payload(slot)) for slot in slots],
         )
         self.session.add(scheduler)
         self.session.flush()
@@ -68,7 +95,9 @@ class SchedulerRepository(BaseRepository[Scheduler]):
         scheduler.utc_offset_minutes = utc_offset_minutes
         scheduler.updated_at = datetime.now(timezone.utc)
         scheduler.slots.clear()
-        scheduler.slots.extend(SchedulerSlot(**slot) for slot in slots)
+        scheduler.slots.extend(
+            SchedulerSlot(**_normalize_slot_payload(slot)) for slot in slots
+        )
         self.session.flush()
         self.session.refresh(scheduler)
         return scheduler

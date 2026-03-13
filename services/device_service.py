@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from smart_common.core.db import transactional_session
 from smart_common.enums.device import DeviceMode
+from smart_common.enums.device_dependency import DeviceDependencyAction
 from smart_common.enums.event import EventType
+from smart_common.enums.scheduler import SchedulerControlMode, SchedulerPolicyType
+from smart_common.enums.sensor import SensorType
 from smart_common.enums.user import UserRole
 from smart_common.events.device_events import (
     DeviceCommandPayload,
@@ -26,9 +29,125 @@ from smart_common.nats.publisher import NatsPublisher
 from smart_common.repositories.device import DeviceRepository
 from smart_common.repositories.microcontroller import MicrocontrollerRepository
 from smart_common.repositories.scheduler import SchedulerRepository
+from smart_common.schemas.automation_rule import (
+    AutomationRuleGroup,
+    AutomationRuleSource,
+    build_legacy_power_rule,
+    extract_legacy_power_threshold,
+    uses_source,
+)
 from smart_common.schemas.device_schema import DeviceListQuery, DeviceResponse
+from smart_common.schemas.device_dependency import (
+    DeviceDependencyRule,
+    parse_device_dependency_rule,
+)
+from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 
 logger = logging.getLogger(__name__)
+
+TEMPERATURE_SENSOR_CAPABILITIES = {
+    SensorType.DS18B20.value,
+    "temperature",
+}
+
+
+def _provider_power_unit(microcontroller: Microcontroller) -> str:
+    provider = microcontroller.power_provider
+    if provider is None or provider.unit is None:
+        return "W"
+    if hasattr(provider.unit, "value"):
+        return str(provider.unit.value)
+    return str(provider.unit)
+
+
+def _normalize_auto_rule(
+    *,
+    auto_rule: AutomationRuleGroup | dict | None,
+    threshold_value: float | None,
+    microcontroller: Microcontroller,
+) -> AutomationRuleGroup | None:
+    normalized_rule: AutomationRuleGroup | None
+    if isinstance(auto_rule, AutomationRuleGroup):
+        normalized_rule = auto_rule
+    elif isinstance(auto_rule, dict):
+        normalized_rule = AutomationRuleGroup.model_validate(auto_rule)
+    else:
+        normalized_rule = None
+
+    if normalized_rule is not None:
+        return normalized_rule
+    if threshold_value is None:
+        return None
+
+    return build_legacy_power_rule(
+        value=float(threshold_value),
+        unit=_provider_power_unit(microcontroller),
+    )
+
+
+def _rule_from_value(value: AutomationRuleGroup | dict | None) -> AutomationRuleGroup | None:
+    if isinstance(value, AutomationRuleGroup):
+        return value
+    if isinstance(value, dict):
+        try:
+            return AutomationRuleGroup.model_validate(value)
+        except Exception:
+            return None
+    return None
+
+
+def _scheduler_policy_from_value(value: SchedulerControlPolicy | dict | None) -> (
+    SchedulerControlPolicy | None
+):
+    if isinstance(value, SchedulerControlPolicy):
+        return value
+    if isinstance(value, dict):
+        try:
+            return SchedulerControlPolicy.model_validate(value)
+        except Exception:
+            return None
+    return None
+
+
+def _microcontroller_has_temperature_sensor(microcontroller: Microcontroller) -> bool:
+    assigned_sensors = {
+        str(sensor).strip().lower()
+        for sensor in getattr(microcontroller, "assigned_sensors", []) or []
+        if str(sensor).strip()
+    }
+    return bool(assigned_sensors & TEMPERATURE_SENSOR_CAPABILITIES)
+
+
+def _slot_uses_temperature_policy(slot) -> bool:
+    control_mode = getattr(slot, "control_mode", SchedulerControlMode.DIRECT)
+    control_mode_value = getattr(control_mode, "value", control_mode)
+    if control_mode_value != SchedulerControlMode.POLICY.value:
+        return False
+
+    policy = _scheduler_policy_from_value(getattr(slot, "control_policy_json", None))
+    if policy is None:
+        return False
+
+    return policy.policy_type == SchedulerPolicyType.TEMPERATURE_HYSTERESIS
+
+
+def _dependency_rule_from_value(
+    value: DeviceDependencyRule | dict | None,
+) -> DeviceDependencyRule | None:
+    return parse_device_dependency_rule(value)
+
+
+def _dependency_rule_is_effective(rule: DeviceDependencyRule | None) -> bool:
+    if rule is None:
+        return False
+    return (
+        rule.when_source_on != DeviceDependencyAction.NONE
+        or rule.when_source_off != DeviceDependencyAction.NONE
+    )
+
+
+def _slot_dependency_rule(slot) -> DeviceDependencyRule | None:
+    return _dependency_rule_from_value(getattr(slot, "device_dependency_rule_json", None))
 
 
 class DeviceService:
@@ -106,35 +225,179 @@ class DeviceService:
                 detail="Device not found for the selected microcontroller",
             )
 
-    def _ensure_threshold_for_auto(
+    def _ensure_target_device(
         self,
         *,
-        new_mode: DeviceMode | None,
-        new_threshold: float | None,
-        current_device: Device | None = None,
-    ) -> None:
-        effective_mode = new_mode or (current_device.mode if current_device else None)
-        effective_threshold = (
-            new_threshold
-            if new_threshold is not None
-            else (current_device.threshold_value if current_device else None)
+        db: Session,
+        user_id: int,
+        target_device_id: int,
+    ) -> Device:
+        target_device = self._repo(db).get_for_user_by_id(target_device_id, user_id)
+        if not target_device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dependency target device not found",
+            )
+        return target_device
+
+    def _normalize_dependency_rule(
+        self,
+        *,
+        db: Session,
+        user_id: int,
+        raw_rule: DeviceDependencyRule | dict | None,
+        source_microcontroller: Microcontroller | None,
+        source_device: Device | None,
+    ) -> DeviceDependencyRule | None:
+        dependency_rule = _dependency_rule_from_value(raw_rule)
+        if not _dependency_rule_is_effective(dependency_rule):
+            return None
+        if dependency_rule is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid device dependency rule",
+            )
+
+        target_device = self._ensure_target_device(
+            db=db,
+            user_id=user_id,
+            target_device_id=dependency_rule.target_device_id,
         )
 
-        if effective_mode == DeviceMode.AUTO_POWER and effective_threshold is None:
+        if source_device is not None and target_device.id == source_device.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device dependency target cannot be the same as the source device",
+            )
+
+        if (
+            source_microcontroller is not None
+            and target_device.microcontroller_id != source_microcontroller.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Dependency target device must belong to the same microcontroller",
+            )
+
+        return dependency_rule.model_copy(
+            update={"target_device_number": target_device.device_number}
+        )
+
+    def _iter_other_inbound_dependency_targets(
+        self,
+        *,
+        microcontroller: Microcontroller,
+        exclude_source_device_id: int | None,
+    ):
+        for device in getattr(microcontroller, "devices", []) or []:
+            if exclude_source_device_id is not None and device.id == exclude_source_device_id:
+                continue
+
+            auto_rule = _dependency_rule_from_value(
+                getattr(device, "device_dependency_rule_json", None)
+            )
+            if _dependency_rule_is_effective(auto_rule):
+                yield ("AUTO", device, auto_rule)
+
+            scheduler = getattr(device, "scheduler", None)
+            if scheduler is None or getattr(device, "mode", None) != DeviceMode.SCHEDULE:
+                continue
+
+            for slot in getattr(scheduler, "slots", []) or []:
+                slot_rule = _slot_dependency_rule(slot)
+                if _dependency_rule_is_effective(slot_rule):
+                    yield ("SCHEDULER", device, slot_rule)
+
+    def _ensure_dependency_target_is_available(
+        self,
+        *,
+        microcontroller: Microcontroller,
+        candidate_rules: list[DeviceDependencyRule],
+        exclude_source_device_id: int | None,
+    ) -> None:
+        candidate_target_ids = {rule.target_device_id for rule in candidate_rules}
+        if not candidate_target_ids:
+            return
+
+        for source_kind, source_device, active_rule in self._iter_other_inbound_dependency_targets(
+            microcontroller=microcontroller,
+            exclude_source_device_id=exclude_source_device_id,
+        ):
+            if active_rule.target_device_id not in candidate_target_ids:
+                continue
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Dependency target device is already controlled by another "
+                    f"{source_kind.lower()} source on this microcontroller"
+                ),
+            )
+
+    def _ensure_auto_rule_for_mode(
+        self,
+        *,
+        microcontroller: Microcontroller,
+        new_mode: DeviceMode | None,
+        new_threshold: float | None,
+        new_auto_rule: AutomationRuleGroup | dict | None,
+        current_device: Device | None = None,
+    ) -> AutomationRuleGroup | None:
+        effective_mode = new_mode or (current_device.mode if current_device else None)
+        effective_threshold = new_threshold
+        if effective_threshold is None and current_device is not None:
+            effective_threshold = (
+                float(current_device.threshold_value)
+                if current_device.threshold_value is not None
+                else None
+            )
+
+        effective_auto_rule = _normalize_auto_rule(
+            auto_rule=(
+                new_auto_rule
+                if new_auto_rule is not None
+                else (current_device.auto_rule_json if current_device else None)
+            ),
+            threshold_value=effective_threshold,
+            microcontroller=microcontroller,
+        )
+
+        if effective_mode == DeviceMode.AUTO_POWER and microcontroller.power_provider is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Auto mode requires a power provider attached to the microcontroller",
+            )
+
+        if effective_mode == DeviceMode.AUTO_POWER and effective_auto_rule is None:
             self.logger.warning(
-                "AUTO mode without threshold | device_id=%s",
+                "AUTO mode without rule | device_id=%s",
                 getattr(current_device, "id", None),
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="threshold_value is required when device mode is AUTO",
+                detail="threshold_value or auto_rule is required when device mode is AUTO",
             )
+
+        if (
+            effective_auto_rule is not None
+            and uses_source(
+                effective_auto_rule,
+                AutomationRuleSource.PROVIDER_BATTERY_SOC,
+            )
+            and not bool(getattr(microcontroller.power_provider, "has_energy_storage", False))
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected provider does not support battery state-of-charge rules",
+            )
+
+        return effective_auto_rule
 
     def _ensure_scheduler_for_mode(
         self,
         *,
         db: Session,
         user_id: int,
+        microcontroller: Microcontroller,
         new_mode: DeviceMode | None,
         scheduler_in_payload: bool,
         new_scheduler_id: int | None,
@@ -156,6 +419,43 @@ class DeviceService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Scheduler not found",
                 )
+            for slot in getattr(scheduler, "slots", []):
+                rule = _rule_from_value(getattr(slot, "activation_rule_json", None))
+                if uses_source(
+                    rule,
+                    AutomationRuleSource.PROVIDER_BATTERY_SOC,
+                ) and not bool(
+                    getattr(microcontroller.power_provider, "has_energy_storage", False)
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Selected provider does not support battery state-of-charge scheduler rules",
+                    )
+                if _slot_uses_temperature_policy(slot) and not _microcontroller_has_temperature_sensor(
+                    microcontroller
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Selected microcontroller does not provide a temperature "
+                            "sensor required by this scheduler"
+                        ),
+                    )
+                slot_dependency_rule = _slot_dependency_rule(slot)
+                if _dependency_rule_is_effective(slot_dependency_rule):
+                    normalized_slot_rule = self._normalize_dependency_rule(
+                        db=db,
+                        user_id=user_id,
+                        raw_rule=slot_dependency_rule,
+                        source_microcontroller=microcontroller,
+                        source_device=current_device,
+                    )
+                    if normalized_slot_rule is not None:
+                        self._ensure_dependency_target_is_available(
+                            microcontroller=microcontroller,
+                            candidate_rules=[normalized_slot_rule],
+                            exclude_source_device_id=getattr(current_device, "id", None),
+                        )
 
         if effective_mode == DeviceMode.SCHEDULE and effective_scheduler_id is None:
             raise HTTPException(
@@ -285,13 +585,29 @@ class DeviceService:
                     ),
                 )
 
-            self._ensure_threshold_for_auto(
+            effective_auto_rule = self._ensure_auto_rule_for_mode(
+                microcontroller=microcontroller,
                 new_mode=payload.get("mode"),
                 new_threshold=payload.get("threshold_value"),
+                new_auto_rule=payload.get("auto_rule"),
             )
+            effective_dependency_rule = self._normalize_dependency_rule(
+                db=db,
+                user_id=user_id,
+                raw_rule=payload.get("device_dependency_rule"),
+                source_microcontroller=microcontroller,
+                source_device=None,
+            )
+            if effective_dependency_rule is not None:
+                self._ensure_dependency_target_is_available(
+                    microcontroller=microcontroller,
+                    candidate_rules=[effective_dependency_rule],
+                    exclude_source_device_id=None,
+                )
             self._ensure_scheduler_for_mode(
                 db=db,
                 user_id=user_id,
+                microcontroller=microcontroller,
                 new_mode=payload.get("mode"),
                 scheduler_in_payload="scheduler_id" in payload,
                 new_scheduler_id=payload.get("scheduler_id"),
@@ -299,6 +615,20 @@ class DeviceService:
 
             data = dict(payload)
             data["microcontroller_id"] = microcontroller.id
+            data["auto_rule_json"] = (
+                effective_auto_rule.model_dump() if effective_auto_rule is not None else None
+            )
+            data["device_dependency_rule_json"] = (
+                effective_dependency_rule.model_dump(mode="json")
+                if effective_dependency_rule is not None
+                else None
+            )
+            legacy_threshold = extract_legacy_power_threshold(effective_auto_rule)
+            data["threshold_value"] = (
+                legacy_threshold[0] if legacy_threshold is not None else None
+            )
+            data.pop("auto_rule", None)
+            data.pop("device_dependency_rule", None)
 
             device = repo.create(data)
             if not isinstance(device.manual_state, bool):
@@ -328,7 +658,11 @@ class DeviceService:
                     mode=device.mode.value,
                     rated_power=device.rated_power,
                     threshold_value=device.threshold_value,
-                    threshold_kw=device.threshold_value,
+                    threshold_unit=_provider_power_unit(microcontroller),
+                    auto_rule=_rule_from_value(device.auto_rule_json),
+                    device_dependency_rule=_dependency_rule_from_value(
+                        device.device_dependency_rule_json
+                    ),
                     scheduler_id=device.scheduler_id,
                     microcontroller_uuid=str(microcontroller.uuid),
                 ),
@@ -360,14 +694,34 @@ class DeviceService:
         device = self.get_device(db, device_id, user_id)
 
         async with transactional_session(db):
-            self._ensure_threshold_for_auto(
+            effective_auto_rule = self._ensure_auto_rule_for_mode(
+                microcontroller=device.microcontroller,
                 new_mode=payload.get("mode"),
                 new_threshold=payload.get("threshold_value"),
+                new_auto_rule=payload.get("auto_rule"),
                 current_device=device,
             )
+            effective_dependency_rule = self._normalize_dependency_rule(
+                db=db,
+                user_id=user_id,
+                raw_rule=(
+                    payload.get("device_dependency_rule")
+                    if "device_dependency_rule" in payload
+                    else getattr(device, "device_dependency_rule_json", None)
+                ),
+                source_microcontroller=device.microcontroller,
+                source_device=device,
+            )
+            if effective_dependency_rule is not None:
+                self._ensure_dependency_target_is_available(
+                    microcontroller=device.microcontroller,
+                    candidate_rules=[effective_dependency_rule],
+                    exclude_source_device_id=device.id,
+                )
             self._ensure_scheduler_for_mode(
                 db=db,
                 user_id=user_id,
+                microcontroller=device.microcontroller,
                 new_mode=payload.get("mode"),
                 scheduler_in_payload="scheduler_id" in payload,
                 new_scheduler_id=payload.get("scheduler_id"),
@@ -378,6 +732,22 @@ class DeviceService:
                 self._ensure_device_belongs_to_microcontroller(
                     device, microcontroller_id
                 )
+
+            payload = dict(payload)
+            payload["auto_rule_json"] = (
+                effective_auto_rule.model_dump() if effective_auto_rule is not None else None
+            )
+            payload["device_dependency_rule_json"] = (
+                effective_dependency_rule.model_dump(mode="json")
+                if effective_dependency_rule is not None
+                else None
+            )
+            legacy_threshold = extract_legacy_power_threshold(effective_auto_rule)
+            payload["threshold_value"] = (
+                legacy_threshold[0] if legacy_threshold is not None else None
+            )
+            payload.pop("auto_rule", None)
+            payload.pop("device_dependency_rule", None)
 
             updated = self._repo(db).update_for_user(device_id, user_id, payload)
             self._sync_device_config_state(
@@ -403,7 +773,12 @@ class DeviceService:
                     device_number=updated.device_number,
                     mode=updated.mode.value,
                     rated_power=updated.rated_power,
-                    threshold_kw=updated.threshold_value,
+                    threshold_value=updated.threshold_value,
+                    threshold_unit=_provider_power_unit(device.microcontroller),
+                    auto_rule=_rule_from_value(updated.auto_rule_json),
+                    device_dependency_rule=_dependency_rule_from_value(
+                        updated.device_dependency_rule_json
+                    ),
                     scheduler_id=updated.scheduler_id,
                 ),
             )
@@ -447,6 +822,37 @@ class DeviceService:
                 "Device DELETED | device_id=%s",
                 device.id,
             )
+
+    async def disable_scheduler_devices(
+        self,
+        *,
+        db: Session,
+        user_id: int,
+        scheduler_id: int,
+    ) -> list[Device]:
+        devices = self._repo(db).list_for_scheduler(
+            scheduler_id=scheduler_id,
+            user_id=user_id,
+        )
+
+        for device in devices:
+            await self.update_device(
+                db,
+                user_id,
+                device.id,
+                {
+                    "mode": DeviceMode.MANUAL,
+                    "scheduler_id": None,
+                },
+            )
+            await self.set_manual_state(
+                db=db,
+                user_id=user_id,
+                device_id=device.id,
+                state=False,
+            )
+
+        return devices
 
     async def set_manual_state(
         self,
@@ -567,6 +973,11 @@ class DeviceService:
                     if device.threshold_value is not None
                     else None
                 )
+                threshold_unit = _provider_power_unit(microcontroller)
+                auto_rule = _rule_from_value(device.auto_rule_json)
+                dependency_rule = _dependency_rule_from_value(
+                    device.device_dependency_rule_json
+                )
                 rated_power = (
                     float(device.rated_power) if device.rated_power is not None else None
                 )
@@ -577,6 +988,18 @@ class DeviceService:
                 item["mode"] = mode_value
                 item["rated_power"] = rated_power
                 item["threshold_value"] = threshold_value
+                item["threshold_unit"] = threshold_unit
+                item["auto_rule"] = (
+                    auto_rule.model_dump() if auto_rule is not None else None
+                )
+                item["device_dependency_rule"] = (
+                    dependency_rule.model_dump(
+                        mode="json",
+                        exclude={"target_device_number"},
+                    )
+                    if dependency_rule is not None
+                    else None
+                )
                 if is_on is not None:
                     item["is_on"] = is_on
                 elif "is_on" not in item and isinstance(device.manual_state, bool):
@@ -592,6 +1015,9 @@ class DeviceService:
                 if device.threshold_value is not None
                 else None
             )
+            threshold_unit = _provider_power_unit(microcontroller)
+            auto_rule = _rule_from_value(device.auto_rule_json)
+            dependency_rule = _dependency_rule_from_value(device.device_dependency_rule_json)
             rated_power = (
                 float(device.rated_power) if device.rated_power is not None else None
             )
@@ -604,6 +1030,18 @@ class DeviceService:
                     "mode": mode_value,
                     "rated_power": rated_power,
                     "threshold_value": threshold_value,
+                    "threshold_unit": threshold_unit,
+                    "auto_rule": (
+                        auto_rule.model_dump() if auto_rule is not None else None
+                    ),
+                    "device_dependency_rule": (
+                        dependency_rule.model_dump(
+                            mode="json",
+                            exclude={"target_device_number"},
+                        )
+                        if dependency_rule is not None
+                        else None
+                    ),
                     "is_on": (
                         is_on
                         if is_on is not None

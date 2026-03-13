@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from enum import Enum
 from uuid import UUID
 
-from smart_common.enums.scheduler import SchedulerCommandAction
+from smart_common.enums.scheduler import SchedulerCommandAction, SchedulerControlMode
+from smart_common.schemas.automation_rule import AutomationRuleGroup
+from smart_common.schemas.device_dependency import DeviceDependencyRule
+from smart_common.schemas.scheduler_policy import SchedulerControlPolicy
 
 
 class DecisionKind(str, Enum):
@@ -26,6 +29,10 @@ class DueSchedulerEntry:
     use_power_threshold: bool
     power_threshold_value: float | None
     power_threshold_unit: str | None
+    activation_rule: AutomationRuleGroup | None
+    control_mode: SchedulerControlMode
+    control_policy: SchedulerControlPolicy | None
+    device_dependency_rule: DeviceDependencyRule | None
 
 
 @dataclass(frozen=True)
@@ -55,3 +62,4 @@ class DispatchCommandEntry:
     scheduler_id: int
     user_id: int
     action: SchedulerCommandAction
+    command_payload: dict | None

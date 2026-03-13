@@ -18,6 +18,7 @@ from smart_common.enums.microcontroller import MicrocontrollerType
 from smart_common.enums.sensor import SensorType
 from smart_common.enums.user import UserRole
 from smart_common.models.provider import Provider
+from smart_common.schemas.automation_rule import AutomationRuleGroup
 from smart_common.schemas.base import APIModel, ORMModel
 from smart_common.schemas.device_schema import DeviceResponse
 from smart_common.schemas.provider_schema import (
@@ -108,6 +109,21 @@ class MicrocontrollerAgentCommand(str, Enum):
 # =====================================================
 
 
+class DeviceDependencyRule(APIModel):
+    when_source_on: Optional[str] = None
+    when_source_off: Optional[str] = None
+    target_device_id: int
+
+    @model_validator(mode="before")
+    @classmethod
+    def strip_legacy_target_device_number(cls, value):
+        if isinstance(value, dict):
+            normalized = dict(value)
+            normalized.pop("target_device_number", None)
+            return normalized
+        return value
+    
+    
 class DeviceConfig(APIModel):
     device_id: int
     device_uuid: Optional[UUID] = None
@@ -116,6 +132,9 @@ class DeviceConfig(APIModel):
     mode: DeviceMode
     rated_power: Optional[float] = None
     threshold_value: Optional[float] = None
+    threshold_unit: Optional[str] = None
+    auto_rule: Optional[AutomationRuleGroup] = None
+    device_dependency_rule: Optional[DeviceDependencyRule] = None
     desired_state: Optional[bool] = None
     is_on: Optional[bool] = None
 
@@ -133,6 +152,7 @@ class MicrocontrollerConfig(APIModel):
     uuid: Optional[UUID] = None
     device_max: int = Field(1, ge=1)
     active_low: bool = False
+    available_sensors: List[str] = Field(default_factory=list)
     devices_config: List[DeviceConfig] = Field(default_factory=list)
     provider: Optional[MicrocontrollerProviderConfig] = None
 

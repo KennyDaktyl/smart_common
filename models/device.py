@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from uuid import UUID as UUIDType
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,6 +47,16 @@ class Device(Base):
         Numeric(12, 4),
         nullable=True,
         comment="Threshold value for the decision rule",
+    )
+    auto_rule_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Structured AUTO mode rule for device",
+    )
+    device_dependency_rule_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Structured source->target dependency rule for device runtime",
     )
     last_state_change_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)

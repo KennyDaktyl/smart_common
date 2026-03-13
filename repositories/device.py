@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 from smart_common.models.device import Device
 from smart_common.models.microcontroller import Microcontroller
@@ -50,6 +51,19 @@ class DeviceRepository(BaseRepository[Device]):
             .join(self.model.microcontroller)
             .filter(
                 self.model.microcontroller_id == microcontroller_id,
+                Microcontroller.user_id == user_id,
+            )
+            .order_by(Device.id.asc())
+            .all()
+        )
+
+    def list_for_scheduler(self, *, scheduler_id: int, user_id: int) -> list[Device]:
+        return (
+            self.session.query(self.model)
+            .join(self.model.microcontroller)
+            .options(selectinload(self.model.microcontroller))
+            .filter(
+                self.model.scheduler_id == scheduler_id,
                 Microcontroller.user_id == user_id,
             )
             .order_by(Device.id.asc())

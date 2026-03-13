@@ -439,6 +439,73 @@ class MicrocontrollerService:
 
         return ack_data
 
+    def _extract_agent_config_files(
+        self,
+        ack_data: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        config_json = ack_data.get("config_json")
+        hardware_config_json = ack_data.get("hardware_config_json")
+        env_file_content = ack_data.get("env_file_content")
+
+        if not isinstance(config_json, dict) or not isinstance(hardware_config_json, dict):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Agent returned invalid config files payload",
+            )
+        if not isinstance(env_file_content, str):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Agent version does not support .env management yet",
+            )
+
+        return config_json, hardware_config_json, env_file_content
+
+    async def sync_agent_config_from_microcontroller(
+        self,
+        db: Session,
+        *,
+        microcontroller: Microcontroller,
+    ) -> None:
+        command_id = uuid4().hex
+        ack_data = await self._publish_microcontroller_command(
+            microcontroller_uuid=microcontroller.uuid,
+            payload=MicrocontrollerCommandPayload(
+                command_id=command_id,
+                command=MicrocontrollerAgentCommand.READ_CONFIG_FILES.value,
+            ),
+        )
+
+        config_json, hardware_config_json, env_file_content = self._extract_agent_config_files(
+            ack_data
+        )
+
+        next_config_json = dict(config_json)
+        next_config_json["microcontroller_uuid"] = str(microcontroller.uuid)
+        next_config_json["device_max"] = microcontroller.max_devices
+        next_config_json["available_sensors"] = list(microcontroller.assigned_sensors)
+
+        write_command_id = uuid4().hex
+        await self._publish_microcontroller_command(
+            microcontroller_uuid=microcontroller.uuid,
+            payload=MicrocontrollerCommandPayload(
+                command_id=write_command_id,
+                command=MicrocontrollerAgentCommand.WRITE_CONFIG_FILES.value,
+                config_json=next_config_json,
+                hardware_config_json=hardware_config_json,
+                env_file_content=env_file_content,
+            ),
+        )
+
+        self.logger.info(
+            "Agent config synced from microcontroller state",
+            extra={
+                "microcontroller_id": microcontroller.id,
+                "microcontroller_uuid": str(microcontroller.uuid),
+                "available_sensors": next_config_json["available_sensors"],
+                "device_max": next_config_json["device_max"],
+            },
+        )
+
     async def get_agent_config_files(
         self,
         db: Session,
@@ -458,20 +525,9 @@ class MicrocontrollerService:
             ),
         )
 
-        config_json = ack_data.get("config_json")
-        hardware_config_json = ack_data.get("hardware_config_json")
-        env_file_content = ack_data.get("env_file_content")
-
-        if not isinstance(config_json, dict) or not isinstance(hardware_config_json, dict):
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Agent returned invalid config files payload",
-            )
-        if not isinstance(env_file_content, str):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Agent version does not support .env management yet",
-            )
+        config_json, hardware_config_json, env_file_content = self._extract_agent_config_files(
+            ack_data
+        )
 
         return {
             "ok": True,

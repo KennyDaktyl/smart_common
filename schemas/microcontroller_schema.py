@@ -109,6 +109,21 @@ class MicrocontrollerAgentCommand(str, Enum):
 # =====================================================
 
 
+class DeviceDependencyRule(APIModel):
+    when_source_on: Optional[str] = None
+    when_source_off: Optional[str] = None
+    target_device_id: int
+
+    @model_validator(mode="before")
+    @classmethod
+    def strip_legacy_target_device_number(cls, value):
+        if isinstance(value, dict):
+            normalized = dict(value)
+            normalized.pop("target_device_number", None)
+            return normalized
+        return value
+    
+    
 class DeviceConfig(APIModel):
     device_id: int
     device_uuid: Optional[UUID] = None
@@ -119,6 +134,7 @@ class DeviceConfig(APIModel):
     threshold_value: Optional[float] = None
     threshold_unit: Optional[str] = None
     auto_rule: Optional[AutomationRuleGroup] = None
+    device_dependency_rule: Optional[DeviceDependencyRule] = None
     desired_state: Optional[bool] = None
     is_on: Optional[bool] = None
 

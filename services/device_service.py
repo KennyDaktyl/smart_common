@@ -823,6 +823,37 @@ class DeviceService:
                 device.id,
             )
 
+    async def disable_scheduler_devices(
+        self,
+        *,
+        db: Session,
+        user_id: int,
+        scheduler_id: int,
+    ) -> list[Device]:
+        devices = self._repo(db).list_for_scheduler(
+            scheduler_id=scheduler_id,
+            user_id=user_id,
+        )
+
+        for device in devices:
+            await self.update_device(
+                db,
+                user_id,
+                device.id,
+                {
+                    "mode": DeviceMode.MANUAL,
+                    "scheduler_id": None,
+                },
+            )
+            await self.set_manual_state(
+                db=db,
+                user_id=user_id,
+                device_id=device.id,
+                state=False,
+            )
+
+        return devices
+
     async def set_manual_state(
         self,
         *,
@@ -962,7 +993,10 @@ class DeviceService:
                     auto_rule.model_dump() if auto_rule is not None else None
                 )
                 item["device_dependency_rule"] = (
-                    dependency_rule.model_dump(mode="json")
+                    dependency_rule.model_dump(
+                        mode="json",
+                        exclude={"target_device_number"},
+                    )
                     if dependency_rule is not None
                     else None
                 )
@@ -1001,7 +1035,10 @@ class DeviceService:
                         auto_rule.model_dump() if auto_rule is not None else None
                     ),
                     "device_dependency_rule": (
-                        dependency_rule.model_dump(mode="json")
+                        dependency_rule.model_dump(
+                            mode="json",
+                            exclude={"target_device_number"},
+                        )
                         if dependency_rule is not None
                         else None
                     ),

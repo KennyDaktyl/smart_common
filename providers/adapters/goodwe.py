@@ -403,7 +403,11 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
         metrics: list[NormalizedMetric] = []
 
         battery_soc = self._safe_watt(powerflow.get("soc"))
+<<<<<<< Updated upstream
         if self.provider_has_energy_storage and battery_soc is not None:
+=======
+        if battery_soc is not None:
+>>>>>>> Stashed changes
             metrics.append(
                 NormalizedMetric(
                     key=BATTERY_SOC_METRIC_KEY,
@@ -417,7 +421,11 @@ class GoodWeProviderAdapter(BaseProviderAdapter):
             )
 
         grid_power = self._extract_signed_grid_power(powerflow)
+<<<<<<< Updated upstream
         if self.provider_has_power_meter and grid_power is not None:
+=======
+        if grid_power is not None:
+>>>>>>> Stashed changes
             metrics.append(
                 NormalizedMetric(
                     key=GRID_POWER_METRIC_KEY,

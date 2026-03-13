@@ -111,7 +111,11 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
         self.session.add(entry)
         self.session.flush()
         self._sync_metric_samples(
+<<<<<<< Updated upstream
             provider=persisted_provider,
+=======
+            provider=provider,
+>>>>>>> Stashed changes
             entry=entry,
             measurement=measurement,
         )
@@ -133,9 +137,36 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
 
         return entry
 
+<<<<<<< Updated upstream
     def _resolve_provider(self, provider: Provider) -> Provider:
         if provider.id is None:
             raise ValueError("provider must be persisted before saving measurements")
+=======
+    def _update_last_measurement(
+        self,
+        entry: ProviderMeasurement,
+        measurement: NormalizedMeasurement,
+        *,
+        metadata_parts: tuple[dict[str, Any], dict[str, Any]],
+        provider_id: int,
+        poll_id: str | None,
+        incoming_metadata: dict[str, Any],
+    ) -> None:
+        system_metadata, extra_data = metadata_parts
+        entry.measured_at = measurement.measured_at
+        entry.measured_unit = measurement.unit
+        entry.measured_value = measurement.value
+        entry.metadata_payload = system_metadata
+        existing_extra_data = _normalize_metadata(entry.extra_data)
+        entry.extra_data = _deep_merge_dict(existing_extra_data, extra_data)
+        self.session.add(entry)
+        self.session.flush()
+        self._replace_metric_samples(
+            provider=provider_id,
+            entry=entry,
+            measurement=measurement,
+        )
+>>>>>>> Stashed changes
 
         try:
             current_session = object_session(provider)
@@ -176,6 +207,53 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
                 last_by_provider[measurement.provider_id] = measurement
 
         return last_by_provider
+
+    def list_metric_definitions(
+        self,
+        *,
+        provider_id: int,
+    ) -> list[ProviderMetricDefinition]:
+        return (
+            self.session.query(ProviderMetricDefinition)
+            .filter(ProviderMetricDefinition.provider_id == provider_id)
+            .order_by(ProviderMetricDefinition.metric_key.asc())
+            .all()
+        )
+
+    def get_metric_definition(
+        self,
+        *,
+        provider_id: int,
+        metric_key: str,
+    ) -> ProviderMetricDefinition | None:
+        return (
+            self.session.query(ProviderMetricDefinition)
+            .filter(
+                ProviderMetricDefinition.provider_id == provider_id,
+                ProviderMetricDefinition.metric_key == metric_key,
+            )
+            .first()
+        )
+
+    def list_metric_samples(
+        self,
+        *,
+        provider_id: int,
+        metric_key: str,
+        date_start: datetime,
+        date_end: datetime,
+    ) -> list[ProviderMetricSample]:
+        return (
+            self.session.query(ProviderMetricSample)
+            .filter(
+                ProviderMetricSample.provider_id == provider_id,
+                ProviderMetricSample.metric_key == metric_key,
+                ProviderMetricSample.measured_at >= date_start,
+                ProviderMetricSample.measured_at <= date_end,
+            )
+            .order_by(ProviderMetricSample.measured_at)
+            .all()
+        )
 
     def list_metric_definitions(
         self,
@@ -284,6 +362,29 @@ class MeasurementRepository(BaseRepository[ProviderMeasurement]):
             .first()
         )
 
+<<<<<<< Updated upstream
+=======
+    def _replace_metric_samples(
+        self,
+        *,
+        provider: int,
+        entry: ProviderMeasurement,
+        measurement: NormalizedMeasurement,
+    ) -> None:
+        self.session.query(ProviderMetricSample).filter(
+            ProviderMetricSample.provider_measurement_id == entry.id,
+        ).delete(synchronize_session=False)
+        self.session.flush()
+        persisted_provider = self.session.get(Provider, provider)
+        if persisted_provider is None:
+            return
+        self._sync_metric_samples(
+            provider=persisted_provider,
+            entry=entry,
+            measurement=measurement,
+        )
+
+>>>>>>> Stashed changes
     def _sync_metric_samples(
         self,
         *,
